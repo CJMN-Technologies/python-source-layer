@@ -90,10 +90,10 @@ python pipeline.py
 Optional max post age in days:
 
 ```bash
-python pipeline.py 3
+python pipeline.py 7
 ```
 
-The default max age is `5` days.
+The default max age is `7` days. Posts with a parsed age older than 7 days are skipped before keyword classification, while posts within the last 7 days are scanned by the keyword classifier.
 
 ## Scheduling
 

@@ -12,6 +12,8 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
+DEFAULT_MAX_AGE_DAYS = 7.0
+
 
 def _next_ext_id_for_category(category: str) -> str:
     """Return next EVNTS-<CATEGORY>-<NNNN> id by querying Supabase for the max existing id.
@@ -58,7 +60,7 @@ def load_pages():
     with open(os.path.join(os.path.dirname(__file__), "pages.json"), "r", encoding="utf-8") as f:
         return json.load(f)
 
-def run_pipeline(priority: str = "all", max_age_days: float | None = 5.0):
+def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX_AGE_DAYS):
     print(f"=== LRT-2 Scraper Pipeline Starting [{priority.upper()}] ===")
     print(f"Time: {datetime.now(timezone.utc)}")
     print(f"Max age: {max_age_days} days")
@@ -81,15 +83,15 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = 5.0):
         posts = scrape_page(page["url"], cookies)
 
         for post in posts:  
+            post_age_days = post.get("age_days")
+            if post_age_days is not None and max_age_days is not None and post_age_days > max_age_days:
+                print(f"  Skipped old post ({post_age_days:.1f} days): {post['text'][:80]}...")
+                continue
+
             combined = f"{post['text']} {post.get('image_text', '')}"
             category = classify_post(combined)
 
             if category is None:
-                continue
-
-            post_age_days = post.get("age_days")
-            if post_age_days is not None and max_age_days is not None and post_age_days > max_age_days:
-                print(f"  Skipped old post ({post_age_days:.1f} days): {post['text'][:80]}...")
                 continue
 
             try:
@@ -117,10 +119,10 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = 5.0):
     print(f"\n=== Done! {total_saved} posts saved to Supabase ===")
 
 if __name__ == "__main__":
-    max_age = 5.0
+    max_age = DEFAULT_MAX_AGE_DAYS
     if len(sys.argv) > 1:
         try:
             max_age = float(sys.argv[1])
         except ValueError:
-            print("Invalid max-age argument, using 5 days")
+            print(f"Invalid max-age argument, using {DEFAULT_MAX_AGE_DAYS:g} days")
     run_pipeline(max_age_days=max_age)
