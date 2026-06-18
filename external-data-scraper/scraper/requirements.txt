@@ -1,0 +1,8 @@
+playwright==1.60.0
+beautifulsoup4==4.15.0
+supabase
+python-dotenv
+apscheduler
+pytesseract
+pillow
+requests

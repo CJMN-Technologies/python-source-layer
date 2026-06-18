@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.xlsx
+*.xls
+*.xlsm
+__pycache__/
+*.py[cod]
+
+# Keep data folder structure, but do not commit source datasets.
+data/new_raw/Internal/*
+data/read_data/Internal/*
+!data/new_raw/Internal/.gitkeep
+!data/read_data/Internal/.gitkeep

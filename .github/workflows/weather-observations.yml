@@ -1,0 +1,26 @@
+name: Weather observations
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly at minute 0
+  workflow_dispatch: {}
+
+jobs:
+  observations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r external-data-scraper/weather/requirements.txt
+      - name: Run observations pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python external-data-scraper/weather/pipeline.py --mode observations

@@ -1,0 +1,18 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.log
+*.pem
+*.key
+*.crt
+
+# Keep external data folder structure, but do not commit source datasets.
+data/new_raw/External/*
+data/read_data/External/*
+!data/new_raw/External/.gitkeep
+!data/read_data/External/.gitkeep

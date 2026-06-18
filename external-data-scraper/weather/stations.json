@@ -1,0 +1,15 @@
+[
+  {"station": "Recto", "code": "RECTO", "latitude": 14.6035, "longitude": 120.9834},
+  {"station": "Legarda", "code": "LEGARDA", "latitude": 14.6009, "longitude": 120.9927},
+  {"station": "Pureza", "code": "PUREZA", "latitude": 14.6017, "longitude": 121.0052},
+  {"station": "V. Mapa", "code": "VMAPA", "latitude": 14.6011, "longitude": 121.0147},
+  {"station": "J. Ruiz", "code": "JRUIZ", "latitude": 14.6024, "longitude": 121.0218},
+  {"station": "Gilmore", "code": "GILMORE", "latitude": 14.6079, "longitude": 121.0337},
+  {"station": "Betty Go-Belmonte", "code": "BGBELMONTE", "latitude": 14.6147, "longitude": 121.0445},
+  {"station": "Cubao", "code": "CUBAO", "latitude": 14.6193, "longitude": 121.0533},
+  {"station": "Anonas", "code": "ANONAS", "latitude": 14.6280, "longitude": 121.0636},
+  {"station": "Katipunan", "code": "KATIPUNAN", "latitude": 14.6324, "longitude": 121.0735},
+  {"station": "Santolan", "code": "SANTOLAN", "latitude": 14.6312, "longitude": 121.0866},
+  {"station": "Marikina-Pasig", "code": "MARIKINA", "latitude": 14.6296, "longitude": 121.0967},
+  {"station": "Antipolo", "code": "ANTIPOLO", "latitude": 14.6256, "longitude": 121.1086}
+]
