@@ -1,4 +1,4 @@
-name: Weather forecasts
+name: Forecast weather extractor
 
 on:
   schedule:
