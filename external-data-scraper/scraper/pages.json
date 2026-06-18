@@ -1,24 +1,46 @@
 [
-  {"station": "Recto", "name": "Manila Public Information Office", "priority": "high", "url": "https://www.facebook.com/ManilaPIO"},
   {"station": "All Stations", "name": "PAGASA DOST", "priority": "high", "url": "https://www.facebook.com/PAGASA.DOST.GOV.PH"},
   {"station": "All Stations", "name": "PAGASA NCR", "priority": "high", "url": "https://www.facebook.com/NCR.PAGASA"},
-  {"station": "Recto", "name": "University of the East Manila", "priority": "medium", "url": "https://www.facebook.com/UEUSC/"},
-  {"station": "Recto", "name": "Far Eastern University Manila", "priority": "medium", "url": "https://www.facebook.com/feucentralstudentorganization/"},
-  {"station": "Legarda", "name": "University of Santo Tomas", "priority": "high", "url": "https://www.facebook.com/USTCSC"},
-  {"station": "Legarda", "name": "San Beda University", "priority": "medium", "url": "https://www.facebook.com/sanbedasc"},
-  {"station": "Pureza", "name": "Polytechnic University of the Philippines", "priority": "high", "url": "https://www.facebook.com/thepupskm"},
-  {"station": "V. Mapa", "name": "UERM Memorial Medical Center", "priority": "low", "url": "https://www.facebook.com/UERMMSC"},
+
+  {"station": "Recto", "name": "Manila Public Information Office", "priority": "high", "url": "https://www.facebook.com/ManilaPIO"},
+  {"station": "Recto", "name": "University of the East Manila", "priority": "medium", "url": "https://www.facebook.com/UniversityoftheEastUE"},
+  {"station": "Recto", "name": "University of the East Student Council", "priority": "medium", "url": "https://www.facebook.com/UEUSC/"},
+  {"station": "Recto", "name": "Far Eastern University Manila", "priority": "medium", "url": "https://www.facebook.com/FarEasternUniversity"},
+  {"station": "Recto", "name": "FEU Central Student Organization", "priority": "medium", "url": "https://www.facebook.com/feucentralstudentorganization/"},
+
+  {"station": "Legarda", "name": "University of Santo Tomas", "priority": "high", "url": "https://www.facebook.com/UST1611official"},
+  {"station": "Legarda", "name": "UST Central Student Council", "priority": "high", "url": "https://www.facebook.com/USTCSC"},
+  {"station": "Legarda", "name": "San Beda University", "priority": "medium", "url": "https://www.facebook.com/SBUManilaOfficial"},
+  {"station": "Legarda", "name": "San Beda Student Council", "priority": "medium", "url": "https://www.facebook.com/sanbedasc"},
+
+  {"station": "Pureza", "name": "Polytechnic University of the Philippines Main", "priority": "high", "url": "https://www.facebook.com/profile.php?id=100069948535295"},
+  {"station": "Pureza", "name": "PUP Sentral na Konseho ng Mag-aaral", "priority": "high", "url": "https://www.facebook.com/thepupskm"},
+
+  {"station": "V. Mapa", "name": "UERM Memorial Medical Center", "priority": "low", "url": "https://www.facebook.com/UERMMMC"},
+  {"station": "V. Mapa", "name": "UERM Medicine Student Council", "priority": "low", "url": "https://www.facebook.com/UERMMSC"},
+
   {"station": "J. Ruiz", "name": "San Juan City Government", "priority": "high", "url": "https://www.facebook.com/CityofSanJuanNCRPhilippines"},
+
   {"station": "Gilmore", "name": "Quezon City Government", "priority": "high", "url": "https://www.facebook.com/QCGov"},
-  {"station": "Gilmore", "name": "St. Paul University Quezon City", "priority": "medium", "url": "https://www.facebook.com/saopsg"},
+  {"station": "Gilmore", "name": "St. Paul University Quezon City", "priority": "medium", "url": "https://www.facebook.com/stpaulqcinfo"},
+  {"station": "Gilmore", "name": "St. Paul University Quezon City SAO", "priority": "medium", "url": "https://www.facebook.com/saopsg"},
+
   {"station": "Betty Go-Belmonte", "name": "Stella Maris College", "priority": "low", "url": "https://www.facebook.com/stellamariscollegequezoncity"},
-  {"station": "Cubao", "name": "Technological Institute of the Philippines", "priority": "high", "url": "https://www.facebook.com/TIP1962official"},
-  {"station": "Anonas", "name": "World Citi Colleges", "priority": "medium", "url": "https://www.facebook.com/WorldCitiCollegesQuezonCity"},
-  {"station": "Katipunan", "name": "Ateneo de Manila University", "priority": "high", "url": "https://www.facebook.com/admusanggu/"},
-  {"station": "Katipunan", "name": "University of the Philippines Diliman", "priority": "high", "url": "https://www.facebook.com/USCUPDiliman"},
+
+  {"station": "Cubao", "name": "Technological Institute of the Philippines Cubao", "priority": "high", "url": "https://www.facebook.com/TIP1962official"},
+
+  {"station": "Anonas", "name": "World Citi Colleges Quezon City", "priority": "medium", "url": "https://www.facebook.com/WorldCitiCollegesQuezonCity"},
+
+  {"station": "Katipunan", "name": "Ateneo de Manila University", "priority": "high", "url": "https://www.facebook.com/ateneodemanila"},
+  {"station": "Katipunan", "name": "Ateneo Sanggunian", "priority": "high", "url": "https://www.facebook.com/admusanggu/"},
+  {"station": "Katipunan", "name": "University of the Philippines Diliman", "priority": "high", "url": "https://www.facebook.com/OfficialUPDiliman"},
+  {"station": "Katipunan", "name": "UP Diliman University Student Council", "priority": "high", "url": "https://www.facebook.com/USCUPDiliman"},
+
   {"station": "Santolan", "name": "Pasig City Public Information Office", "priority": "high", "url": "https://www.facebook.com/PasigPIO"},
+
   {"station": "Marikina-Pasig", "name": "Marikina Public Information Office", "priority": "high", "url": "https://www.facebook.com/MarikinaPIO"},
+
   {"station": "Antipolo", "name": "Antipolo City Government PIO", "priority": "high", "url": "https://www.facebook.com/antipolocitygovernment"},
   {"station": "Antipolo", "name": "Municipality of Cainta", "priority": "high", "url": "https://www.facebook.com/onecainta.onecainta"},
-  {"station": "Antipolo", "name": "Our Lady of Fatima University", "priority": "medium", "url": "https://www.facebook.com/our.lady.of.fatima.university"}
+  {"station": "Antipolo", "name": "Our Lady of Fatima University Antipolo", "priority": "medium", "url": "https://www.facebook.com/our.lady.of.fatima.university"}
 ]
