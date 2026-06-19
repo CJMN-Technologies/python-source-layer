@@ -1,6 +1,7 @@
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
-import easyocr
+from google import genai
+import os
 from PIL import Image
 import numpy as np
 import requests
@@ -11,14 +12,19 @@ import re
 from datetime import datetime
 from urllib.parse import quote, urlparse
 
-# Lazy-initialized EasyOCR reader (loads model on first use)
-_ocr_reader = None
+# Lazy-initialized Gemini client
+_gemini_client = None
 
-def _get_ocr_reader():
-    global _ocr_reader
-    if _ocr_reader is None:
-        _ocr_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
-    return _ocr_reader
+def _get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("  Warning: GEMINI_API_KEY env variable not found.")
+        _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
 
 OCR_CACHE: dict[str, str] = {}
 
@@ -271,7 +277,7 @@ def short_url_for_log(image_url: str) -> str:
 
 
 def extract_text_from_image(image_url: str) -> str:
-    """Download an image and extract text using EasyOCR."""
+    """Download an image and extract text using Google's Gemini Vision API."""
     if image_url in OCR_CACHE:
         return OCR_CACHE[image_url]
 
@@ -287,22 +293,25 @@ def extract_text_from_image(image_url: str) -> str:
             OCR_CACHE[image_url] = ""
             return ""
 
-        # Crop footer (social media handles, logos) before OCR
-        image = crop_footer(image)
-        img_array = np.array(image.convert("RGB"))
+        client = _get_gemini_client()
+        # Send to Gemini 2.5 Flash multimodal vision
+        gemini_response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                "You are an OCR and information extraction assistant. "
+                "Read all the text visible in the attached image. "
+                "Provide ONLY the extracted main announcement or advisory text. "
+                "Follow these rules:\n"
+                "1. Ignore social media footers, logos, icons, links, usernames, and contact information at the bottom.\n"
+                "2. Ignore headers or logos that only contain the organization's name unless it is part of the announcement text itself.\n"
+                "3. Preserve paragraph breaks and spacing where appropriate.\n"
+                "4. Strip out any standalone decorative emojis or symbols.\n"
+                "5. Do NOT add any extra commentary or introductory text (like 'Here is the text:'). Just output the transcribed text.",
+                image
+            ]
+        )
 
-        # Run EasyOCR
-        reader = _get_ocr_reader()
-        ocr_results = reader.readtext(img_array, detail=1, paragraph=False)
-
-        # Filter by confidence and join text
-        lines = []
-        for (bbox, text, confidence) in ocr_results:
-            if confidence < 0.25:
-                continue
-            lines.append(text)
-
-        raw_text = "\n".join(lines)
+        raw_text = gemini_response.text or ""
         result = clean_ocr_text(raw_text)
         OCR_CACHE[image_url] = result
         return result
