@@ -605,7 +605,7 @@ def scrape_page(page_url: str, cookies: list, max_scrolls: int = 5) -> list[dict
                                 if ocr_count >= 5:
                                     break
                                 src = img.get("src", "") or img.get("data-src", "")
-                                if "scontent" in src and "p" in src and src not in seen_images:
+                                if "scontent" in src and src not in seen_images:
                                     seen_images.add(src)
                                     ocr_result = extract_text_from_image(src)
                                     if ocr_result:
