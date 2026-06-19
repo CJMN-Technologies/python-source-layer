@@ -65,6 +65,17 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
     print(f"Time: {datetime.now(timezone.utc)}")
     print(f"Max age: {max_age_days} days")
 
+    # Fetch existing source_urls from database to avoid duplicate scraping and OCR
+    existing_urls = set()
+    try:
+        res = supabase.schema("external").table("academic_lgu_events").select("source_url").execute()
+        rows = res.data if hasattr(res, "data") else res
+        if rows:
+            existing_urls = {row.get("source_url") for row in rows if row.get("source_url")}
+        print(f"Loaded {len(existing_urls)} existing event URLs from database.")
+    except Exception as e:
+        print(f"Warning: Could not fetch existing URLs from database: {e}")
+
     all_pages = load_pages()
     cookies = get_cookies()
     total_saved = 0
@@ -80,7 +91,7 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
     for page in pages:
         print(f"\nScraping: {page['name']} ({page['station']})")
 
-        posts = scrape_page(page["url"], cookies)
+        posts = scrape_page(page["url"], cookies, existing_urls)
 
         for post in posts:  
             post_age_days = post.get("age_days")

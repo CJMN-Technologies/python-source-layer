@@ -294,22 +294,36 @@ def extract_text_from_image(image_url: str) -> str:
             return ""
 
         client = _get_gemini_client()
-        # Send to Gemini 2.5 Flash multimodal vision
-        gemini_response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                "You are an OCR and information extraction assistant. "
-                "Read all the text visible in the attached image. "
-                "Provide ONLY the extracted main announcement or advisory text. "
-                "Follow these rules:\n"
-                "1. Ignore social media footers, logos, icons, links, usernames, and contact information at the bottom.\n"
-                "2. Ignore headers or logos that only contain the organization's name unless it is part of the announcement text itself.\n"
-                "3. Preserve paragraph breaks and spacing where appropriate.\n"
-                "4. Strip out any standalone decorative emojis or symbols.\n"
-                "5. Do NOT add any extra commentary or introductory text (like 'Here is the text:'). Just output the transcribed text.",
-                image
-            ]
+        prompt = (
+            "You are an OCR and information extraction assistant. "
+            "Read all the text visible in the attached image. "
+            "Provide ONLY the extracted main announcement or advisory text. "
+            "Follow these rules:\n"
+            "1. Ignore social media footers, logos, icons, links, usernames, and contact information at the bottom.\n"
+            "2. Ignore headers or logos that only contain the organization's name unless it is part of the announcement text itself.\n"
+            "3. Preserve paragraph breaks and spacing where appropriate.\n"
+            "4. Strip out any standalone decorative emojis or symbols.\n"
+            "5. Do NOT add any extra commentary or introductory text (like 'Here is the text:'). Just output the transcribed text."
         )
+
+        models_to_try = ["gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
+        gemini_response = None
+        for model_name in models_to_try:
+            try:
+                gemini_response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt, image]
+                )
+                break
+            except Exception as e:
+                if "RESOURCE_EXHAUSTED" in str(e):
+                    print(f"  {model_name} quota exhausted. Trying next model...")
+                    continue
+                else:
+                    raise e
+
+        if gemini_response is None:
+            raise RuntimeError("All configured Gemini models returned RESOURCE_EXHAUSTED.")
 
         raw_text = gemini_response.text or ""
         result = clean_ocr_text(raw_text)
@@ -519,7 +533,7 @@ def normalize_playwright_cookies(cookies: list) -> list:
     return out
 
 
-def scrape_page(page_url: str, cookies: list, max_scrolls: int = 5) -> list[dict]:
+def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scrolls: int = 5) -> list[dict]:
     posts = []
 
     with sync_playwright() as p:
@@ -573,6 +587,9 @@ def scrape_page(page_url: str, cookies: list, max_scrolls: int = 5) -> list[dict
 
                         href = find_ancestor_with_link(el)
                         post_url = clean_url(href) if href else (page.url if page.url else page_url)
+
+                        if existing_urls and post_url in existing_urls:
+                            continue
 
                         age_source_text = get_post_header_text(el, caption_text)
                         post_age_days = parse_age_days(age_source_text) or parse_age_days(caption_text)
