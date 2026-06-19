@@ -3,6 +3,6 @@ beautifulsoup4==4.15.0
 supabase
 python-dotenv
 apscheduler
-pytesseract
+easyocr
 pillow
 requests

@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 from auth import get_cookies
@@ -94,6 +94,12 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
             if category is None:
                 continue
 
+            now = datetime.now(timezone.utc)
+            if post_age_days is not None:
+                post_date = now - timedelta(days=post_age_days)
+            else:
+                post_date = now
+
             try:
                 # generate a stable external trigger id per category
                 ext_id = _next_ext_id_for_category(category)
@@ -106,13 +112,10 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
                     "post_text":     post["text"][:2000],
                     "image_text":    post["image_text"][:2000] if post["image_text"] else None,
                     "category":      category,
-                    "scraped_at":    datetime.now(timezone.utc).isoformat(),
+                    "scraped_at":    now.isoformat(),
+                    "post_date":     post_date.isoformat(),
                 }).execute()
-
-                age_label = f" ({post_age_days:.1f}d)" if post_age_days is not None else ""
-                print(f"  Saved [{category}]{age_label}: {post['text'][:60]}...")
                 total_saved += 1
-
             except Exception as e:
                 print(f"  Failed to save post: {e}")
 
