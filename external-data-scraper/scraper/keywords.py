@@ -91,6 +91,9 @@ LGU_KEYWORDS = [
 def classify_post(text: str) -> str | None:
     text_lower = text.lower()
 
+    if any(kw in text_lower for kw in ["academic calendar", "school calendar", "collegiate calendar", "university calendar"]):
+        return None
+
     academic_match = any(kw in text_lower for kw in ACADEMIC_KEYWORDS)
     lgu_match = any(kw in text_lower for kw in LGU_KEYWORDS)
     academic_context = any(ctx in text_lower for ctx in [

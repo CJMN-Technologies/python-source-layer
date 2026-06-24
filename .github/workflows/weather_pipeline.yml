@@ -1,0 +1,35 @@
+name: Weather Pipeline
+
+on:
+  schedule:
+    # Runs at 00:00 every day
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub UI
+
+jobs:
+  scrape-weather:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r external-data-scraper/weather/requirements.txt
+
+      - name: Run Weather Pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        working-directory: ./external-data-scraper/weather
+        run: |
+          python pipeline.py

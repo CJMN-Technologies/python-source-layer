@@ -4,9 +4,11 @@ import sys
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from auth import get_cookies
+from auth import get_all_cookie_profiles
 from fb_scraper import scrape_page
 from keywords import classify_post
+from llm_classifier import classify_post_llm
+from email_notifier import send_pipeline_alert
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -16,31 +18,22 @@ DEFAULT_MAX_AGE_DAYS = 7.0
 
 
 def _next_ext_id_for_category(category: str) -> str:
-    """Return next EVNTS-<CATEGORY>-<NNNN> id by querying Supabase for the max existing id.
-
-    Category names are mapped to shorter identifiers for the event id:
-    - academic -> ACAD
-    - lgu -> LGU
-    Falls back to the uppercased category name if no mapping exists.
+    """Return next external_<category>_<NNNN> id by querying Supabase for the max existing id.
     """
     category_key = category.lower()
-    if category_key == "academic":
-        category_code = "ACAD"
+    if category_key in ("academic", "academic_calendar", "acad"):
+        category_code = "acad"
     elif category_key == "lgu":
-        category_code = "LGU"
+        category_code = "lgu"
+    elif category_key == "pagasa":
+        category_code = "pagasa"
     else:
-        category_code = category.upper()
+        category_code = category.lower()
 
-    base = f"EVNTS-{category_code}"
+    base = f"external_{category_code}"
     try:
-        res = supabase.schema("external").table("academic_lgu_events").select("id").ilike("id", f"{base}-%").order("id", desc=True).limit(1).execute()
-        rows = None
-        if isinstance(res, dict) and res.get("data") is not None:
-            rows = res.get("data")
-        elif hasattr(res, "data"):
-            rows = getattr(res, "data")
-        elif isinstance(res, (list, tuple)) and len(res) > 0:
-            rows = res[0]
+        res = supabase.schema("external").table("academic_lgu_events").select("id").ilike("id", f"{base}_%").order("id", desc=True).limit(1).execute()
+        rows = res.data if hasattr(res, "data") else res
 
         if rows:
             # rows is list of rows; take first
@@ -48,13 +41,13 @@ def _next_ext_id_for_category(category: str) -> str:
             last_id = first.get("id") if isinstance(first, dict) else None
             if last_id:
                 try:
-                    last_num = int(last_id.rsplit("-", 1)[-1])
-                    return f"{base}-{(last_num + 1):04d}"
+                    last_num = int(last_id.rsplit("_", 1)[-1])
+                    return f"{base}_{(last_num + 1):04d}"
                 except Exception:
                     pass
     except Exception:
         pass
-    return f"{base}-0001"
+    return f"{base}_0001"
 
 def load_pages():
     with open(os.path.join(os.path.dirname(__file__), "pages.json"), "r", encoding="utf-8") as f:
@@ -65,20 +58,26 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
     print(f"Time: {datetime.now(timezone.utc)}")
     print(f"Max age: {max_age_days} days")
 
-    # Fetch existing source_urls from database to avoid duplicate scraping and OCR
     existing_urls = set()
+    existing_texts = set()
     try:
-        res = supabase.schema("external").table("academic_lgu_events").select("source_url").execute()
+        res = supabase.schema("external").table("academic_lgu_events").select("source_url, post_text, image_text").execute()
         rows = res.data if hasattr(res, "data") else res
         if rows:
             existing_urls = {row.get("source_url") for row in rows if row.get("source_url")}
-        print(f"Loaded {len(existing_urls)} existing event URLs from database.")
+            for row in rows:
+                combined_db = f"{row.get('post_text') or ''} {row.get('image_text') or ''}".strip()
+                if combined_db:
+                    existing_texts.add(combined_db[:100])
+        print(f"Loaded {len(existing_urls)} existing events from database.")
     except Exception as e:
-        print(f"Warning: Could not fetch existing URLs from database: {e}")
+        print(f"Warning: Could not fetch existing data from database: {e}")
 
     all_pages = load_pages()
-    cookies = get_cookies()
+    cookie_profiles = get_all_cookie_profiles()
+    cookies = cookie_profiles[0] if cookie_profiles else []
     total_saved = 0
+    newly_saved_events = []
 
     # filter pages by priority
     if priority == "all":
@@ -99,11 +98,44 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
                 print(f"  Skipped old post ({post_age_days:.1f} days): {post['text'][:80]}...")
                 continue
 
-            combined = f"{post['text']} {post.get('image_text', '')}"
-            category = classify_post(combined)
-
-            if category is None:
+            combined = f"{post.get('text', '')} {post.get('image_text', '')}".strip()
+            
+            # Deduplicate by text similarity to catch /posts/ vs /photo/ differences
+            post_prefix = combined[:100]
+            if post_prefix and post_prefix in existing_texts:
+                print("  Skipped duplicate text (already in DB under different URL).")
                 continue
+            
+            if "fatima" in page["url"].lower() or "fatima" in page["name"].lower():
+                combined_lower = combined.lower()
+                if "antipolo" not in combined_lower and "𝗔𝗻𝘁𝗶𝗽𝗼𝗹𝗼" not in combined:
+                    print(f"  Skipped OLFU post: Does not mention Antipolo campus.")
+                    continue
+
+            # PRE-FILTER with keywords
+            pre_category = classify_post(combined)
+            if pre_category is None:
+                continue
+                
+            # SMART EXTRACTION with LLM
+            llm_res = classify_post_llm(combined)
+            category = llm_res.get("category")
+            
+            if category is None:
+                print("  LLM rejected post (Not a valid event/calendar).")
+                continue
+
+            # Override category based on page name
+            page_name_lower = page["name"].lower()
+            if "pagasa" in page_name_lower:
+                category = "pagasa"
+            elif "government" in page_name_lower or "pio" in page_name_lower:
+                category = "lgu"
+            else:
+                category = "acad"
+                
+            event_name = llm_res.get("event_name")
+            event_date = llm_res.get("event_date")
 
             now = datetime.now(timezone.utc)
             if post_age_days is not None:
@@ -126,11 +158,23 @@ def run_pipeline(priority: str = "all", max_age_days: float | None = DEFAULT_MAX
                     "scraped_at":    now.isoformat(),
                     "post_date":     post_date.isoformat(),
                 }).execute()
+                existing_texts.add(post_prefix)
                 total_saved += 1
+                newly_saved_events.append({
+                    "source_name": page["name"],
+                    "category": category,
+                    "event_name": event_name or "N/A",
+                    "event_date": event_date or "N/A",
+                    "url": post.get("source_url", page["url"])
+                })
             except Exception as e:
                 print(f"  Failed to save post: {e}")
 
     print(f"\n=== Done! {total_saved} posts saved to Supabase ===")
+    
+    if newly_saved_events:
+        print("Sending email alert for new events...")
+        send_pipeline_alert(newly_saved_events)
 
 if __name__ == "__main__":
     max_age = DEFAULT_MAX_AGE_DAYS

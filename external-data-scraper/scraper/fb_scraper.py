@@ -12,19 +12,33 @@ import re
 from datetime import datetime
 from urllib.parse import quote, urlparse
 
-# Lazy-initialized Gemini client
-_gemini_client = None
+# Lazy-initialized list of Gemini API keys
+_gemini_keys = None
 
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
+def _get_gemini_keys():
+    global _gemini_keys
+    if _gemini_keys is None:
         from dotenv import load_dotenv
         load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
+        
+        # Load main key (which could be a comma-separated list of keys)
+        keys_raw = os.getenv("GEMINI_API_KEY") or ""
+        keys = [k.strip() for k in keys_raw.split(",") if k.strip()]
+        
+        # Also load backup keys like GEMINI_API_KEY_2, GEMINI_API_KEY_3...
+        idx = 2
+        while True:
+            k = os.getenv(f"GEMINI_API_KEY_{idx}")
+            if k:
+                keys.append(k.strip())
+                idx += 1
+            else:
+                break
+                
+        if not keys:
             print("  Warning: GEMINI_API_KEY env variable not found.")
-        _gemini_client = genai.Client(api_key=api_key)
-    return _gemini_client
+        _gemini_keys = keys
+    return _gemini_keys
 
 OCR_CACHE: dict[str, str] = {}
 
@@ -161,6 +175,8 @@ DATE_PATTERNS = [
     (re.compile(r"Ngayon", re.I), lambda m: 0.0),
     (re.compile(r"(?:noong\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|lunes|martes|miyerkules|huwebes|biyernes|sabado|linggo)", re.I), weekday_age_days),
     (re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s*(\d{4})", re.I), None),
+    (re.compile(r"(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+at\s+\d{1,2}:\d{2})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, datetime.strptime(m.group(2), "%B").month, int(m.group(1)))).days)),
+    (re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:\s+at\s+\d{1,2}:\d{2})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, datetime.strptime(m.group(1), "%B").month, int(m.group(2)))).days)),
 ]
 
 
@@ -293,7 +309,11 @@ def extract_text_from_image(image_url: str) -> str:
             OCR_CACHE[image_url] = ""
             return ""
 
-        client = _get_gemini_client()
+        keys = _get_gemini_keys()
+        if not keys:
+            print("  OCR skipped: No Gemini API keys found in environment.")
+            return ""
+
         prompt = (
             "You are an OCR and information extraction assistant. "
             "Read all the text visible in the attached image. "
@@ -308,22 +328,33 @@ def extract_text_from_image(image_url: str) -> str:
 
         models_to_try = ["gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
         gemini_response = None
-        for model_name in models_to_try:
+        
+        # Loop through each API key, trying all models on it
+        for key_idx, api_key in enumerate(keys, start=1):
             try:
-                gemini_response = client.models.generate_content(
-                    model=model_name,
-                    contents=[prompt, image]
-                )
-                break
+                client = genai.Client(api_key=api_key)
             except Exception as e:
-                if "RESOURCE_EXHAUSTED" in str(e):
-                    print(f"  {model_name} quota exhausted. Trying next model...")
-                    continue
-                else:
-                    raise e
+                print(f"  Failed to initialize Gemini client for Key #{key_idx}: {e}")
+                continue
+                
+            for model_name in models_to_try:
+                try:
+                    gemini_response = client.models.generate_content(
+                        model=model_name,
+                        contents=[prompt, image]
+                    )
+                    break
+                except Exception as e:
+                    if "RESOURCE_EXHAUSTED" in str(e):
+                        print(f"  {model_name} quota exhausted on API Key #{key_idx}. Trying next model/key...")
+                        continue
+                    else:
+                        raise e
+            if gemini_response is not None:
+                break
 
         if gemini_response is None:
-            raise RuntimeError("All configured Gemini models returned RESOURCE_EXHAUSTED.")
+            raise RuntimeError("All configured Gemini API keys and models returned RESOURCE_EXHAUSTED.")
 
         raw_text = gemini_response.text or ""
         result = clean_ocr_text(raw_text)
@@ -346,6 +377,9 @@ def is_suspension_related(text: str, image_text: str = "") -> bool:
         return False
 
     lowered = combined.lower()
+
+    if any(kw in lowered for kw in ["academic calendar", "school calendar", "collegiate calendar", "university calendar"]):
+        return False
 
     # Accept clearly relevant academic or LGU phrases immediately.
     for kw in STRONG_RELEVANT_KEYWORDS:

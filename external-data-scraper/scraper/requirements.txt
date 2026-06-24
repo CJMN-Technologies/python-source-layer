@@ -6,3 +6,5 @@ apscheduler
 google-genai
 pillow
 requests
+pandas
+openpyxl
