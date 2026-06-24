@@ -10,6 +10,10 @@ from keywords import classify_post
 from llm_classifier import classify_post_llm
 from email_notifier import send_pipeline_alert
 
+# Fix Windows console encoding crash on special characters (e.g. arrows, checkmarks)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
@@ -58,6 +62,29 @@ def _next_ext_id_for_category(category: str) -> str:
     except Exception:
         pass
     return f"{base}_0001"
+
+# ---------------------------------------------------------------------------
+# PAGASA geographic relevance filter
+# Only keep PAGASA posts that mention NCR or LRT-2 station catchment cities.
+# Discard province-only bulletins (Zambales, Bataan, Visayas, etc.)
+# ---------------------------------------------------------------------------
+_PAGASA_RELEVANT_AREAS = [
+    # Metro Manila (NCR)
+    "metro manila", "ncr", "national capital region",
+    "manila", "quezon city", "san juan", "pasig",
+    "marikina", "mandaluyong", "makati", "pasay",
+    "caloocan", "malabon", "navotas", "valenzuela",
+    "las pinas", "muntinlupa", "paranaque", "taguig",
+    # LRT-2 extension catchment
+    "antipolo", "cainta", "rizal",
+    # Broad NCR mentions
+    "metro", "mmda",
+]
+
+def _is_pagasa_relevant(text: str) -> bool:
+    """Return True if a PAGASA post mentions NCR or LRT-2 catchment areas."""
+    lowered = text.casefold()
+    return any(area in lowered for area in _PAGASA_RELEVANT_AREAS)
 
 
 def load_pages(batch: str = "all") -> list[dict]:
@@ -193,6 +220,12 @@ def run_pipeline(batch: str = "all"):
                     print("  Skipped OLFU post: Does not mention Antipolo campus.")
                     continue
 
+            # PAGASA geographic filter — only keep posts about NCR / LRT-2 areas
+            if "pagasa" in page["name"].casefold():
+                if not _is_pagasa_relevant(combined):
+                    print(f"  Skipped PAGASA post: not relevant to NCR/LRT-2 area.")
+                    continue
+
             # PRE-FILTER with keywords (case-insensitive via classify_post using .casefold())
             pre_category = classify_post(combined)
             if pre_category is None:
@@ -243,7 +276,7 @@ def run_pipeline(batch: str = "all"):
                     "event_date":  event_date or "N/A",
                     "url":         post.get("source_url", page["url"])
                 })
-                print(f"  ✓ Saved: [{category}] {event_name or post['text'][:60]}")
+                print(f"  >> Saved: [{category}] {event_name or post['text'][:60]}")
             except Exception as e:
                 print(f"  Failed to save post: {e}")
 

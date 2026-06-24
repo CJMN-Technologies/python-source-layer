@@ -103,7 +103,7 @@ CATEGORY null (reject — not relevant):
     # Model fallback: start with cheapest to conserve quota
     models_to_try = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
 
-    for _ in range(2):  # 2 full rounds through all keys
+    for attempt in range(3):  # up to 3 retry rounds (handles 503 spikes)
         for api_key in keys:
             for model_name in models_to_try:
                 try:
@@ -136,11 +136,19 @@ CATEGORY null (reject — not relevant):
                 except Exception as e:
                     err_str = str(e)
                     if "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str:
+                        # Quota exhausted on this key — try next key immediately
                         print(f"  [{model_name}] Quota exceeded on key, trying next...")
+                        break  # break model loop, try next key
+                    elif "503" in err_str or "UNAVAILABLE" in err_str:
+                        # Temporary server spike — wait with backoff then retry same key/model
+                        wait = 2 ** attempt
+                        print(f"  [{model_name}] 503 server spike, retrying in {wait}s...")
+                        time.sleep(wait)
                         continue
                     else:
                         print(f"  Error calling Gemini [{model_name}] for classification: {e}")
 
-        time.sleep(2)  # Brief delay before retry round
+        if attempt < 2:
+            time.sleep(2 ** attempt)  # backoff between full rounds
 
     return {"category": None, "event_name": None, "event_date": None}
