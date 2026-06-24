@@ -8,39 +8,90 @@ from typing import Optional
 # Local imports
 from fb_scraper import _get_gemini_keys
 
+
 class PostClassification(BaseModel):
     category: Optional[str]
     event_name: Optional[str]
     event_date: Optional[str]
 
+
 def classify_post_llm(post_text: str) -> dict:
     """
     Passes the post text to Gemini to classify and extract event details.
     Returns a dict with 'category', 'event_name', and 'event_date'.
-    Category can be 'academic', 'lgu', 'academic_calendar', or None.
+
+    Category values:
+      - 'academic'          — class suspensions, resumptions, school holidays,
+                              exam weeks, enrollment, graduation, orientations
+      - 'lgu'               — government advisories, weather events, transport
+                              disruptions, road closures, concert/arena events,
+                              strikes, LRT-2 service alerts
+      - 'academic_calendar' — a post sharing a full academic calendar document
+      - null                — not relevant to LRT-2 ridership (e.g. general news,
+                              birthday greetings, food posts, generic promos)
     """
     if not post_text or not post_text.strip():
         return {"category": None, "event_name": None, "event_date": None}
 
     prompt = f"""
-You are a highly accurate data extraction assistant for an events pipeline.
-Analyze the following Facebook post text from a university, student council, or local government unit in the Philippines.
+You are a highly accurate data extraction assistant for an LRT-2 ridership impact events pipeline in the Philippines.
 
-Your task is to classify the post into one of the following categories, AND extract the event details if applicable.
+Analyze the following Facebook post text from a university, student council, or local government unit (LGU) in the Philippines.
+Your task is to CLASSIFY the post into one of the following categories AND extract event details if applicable.
 
-Categories:
-1. "academic" - Event related to class suspensions, resumptions, schedule changes, school holidays, or ANY campus-specific events (e.g. enrollment schedules, orientations, exams, graduation, activities).
-2. "lgu" - Event related to local government unit announcements (e.g., city-wide suspensions, typhoons, road closures) that affect the public.
-3. "academic_calendar" - A post explicitly announcing or sharing an Academic Calendar, School Calendar, or Collegiate Calendar.
-4. null - If the post does NOT fit any of the above (e.g., general greetings, generic news, intramurals without class suspension, etc.).
+=== FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
+The following trigger types are relevant and SHOULD be classified (do not reject them):
 
-Extraction Rules:
-- If category is "academic" or "lgu", extract the `event_name` (e.g., "Class Suspension due to Typhoon", "Enrollment Period") and `event_date` (e.g., "2026-06-25" or "June 25-26, 2026").
-- If category is "academic_calendar", leave `event_name` and `event_date` as null.
-- If category is null, leave everything as null.
-- Always output JSON matching the requested schema.
+CATEGORY "lgu":
+  - Full Suspension / Power Failure (LRT-2 not operating)
+  - Transport Strike: Tigil Pasada, Jeepney Strike, Welga ng Drivers
+  - Partial Line Suspension (e.g. Cubao-Antipolo only, provisionary service)
+  - Mid-Day Class Suspension (LGU-announced, e.g. 12:00 PM suspension)
+  - Torrential Rain / Orange or Red PAGASA Warning
+  - Typhoon Signal No. 2 or higher
+  - Typhoon Signal No. 1 (light)
+  - Heavy Rain / Yellow PAGASA Warning
+  - Major Arena / Concert Event (Smart Araneta, PhilSports, MOA Arena — causes ridership spike)
+  - Code Yellow / Degraded Headway / Delayed Train (LRT-2 running slow)
+  - Road Closure, Government Offices Closed, LGU Advisories
+  - State of Calamity / Disaster Declarations
+  - Weather advisories (Habagat, Amihan, Monsoon)
+  - Baha / Flash Flood Advisories
 
-Post Text:
+CATEGORY "academic":
+  - Class Suspension (school-specific or campus-wide)
+  - Resumption of Classes
+  - University Exam Week (Midterms, Finals — causes ridership change)
+  - Enrollment / Registration Period
+  - School Orientations / Back-to-School
+  - Graduation / Commencement Ceremonies
+  - Intramurals / University Week / Foundation Day (affects ridership)
+  - School Holidays / Holiday Breaks
+  - Asynchronous / Online / Modular Classes
+  - Walang Pasok, Walang Klase, Suspendido ang Klase (Tagalog equivalents)
+  - Schedule changes specific to one or more campuses
+
+CATEGORY "academic_calendar":
+  - A post explicitly announcing or sharing a full Academic Calendar, School Calendar,
+    Collegiate Calendar, or University Calendar for an entire semester/year.
+  - Only use this if the post is PRIMARILY a calendar schedule, NOT a specific event announcement.
+
+CATEGORY null (reject — not relevant):
+  - Generic greetings (Happy Birthday, Merry Christmas) with no event content
+  - Promotional posts for merchandise, food, services
+  - Generic motivational or inspirational quotes
+  - Job postings or recruitment ads
+  - News articles about topics unrelated to classes, transportation, or local government
+  - Alumni events with no impact on current students or commuters
+
+=== EXTRACTION RULES ===
+- For "academic" and "lgu": extract event_name (concise, e.g. "Class Suspension due to Typhoon Carina")
+  and event_date (e.g. "2026-06-25" or "June 25-26, 2026"). If date is unclear, write "Not specified".
+- For "academic_calendar": leave event_name and event_date as null.
+- For null: leave everything as null.
+- Output ONLY valid JSON matching the schema. Do not add explanations.
+
+=== POST TEXT ===
 \"\"\"{post_text}\"\"\"
 """
 
@@ -49,43 +100,47 @@ Post Text:
         print("Warning: No Gemini API keys found for LLM classification.")
         return {"category": None, "event_name": None, "event_date": None}
 
-    # Attempt to cycle through keys if quota is exceeded
-    for _ in range(2):
+    # Model fallback: start with cheapest to conserve quota
+    models_to_try = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+
+    for _ in range(2):  # 2 full rounds through all keys
         for api_key in keys:
-            try:
-                client = genai.Client(api_key=api_key)
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                    config={
-                        'response_mime_type': 'application/json',
-                        'response_schema': PostClassification,
-                        'temperature': 0.1,
-                    },
-                )
-                if response.text:
-                    try:
-                        data = json.loads(response.text)
-                        # Normalize "null" string to actual None just in case
-                        for k, v in data.items():
-                            if isinstance(v, str) and v.lower() == "null":
-                                data[k] = None
-                                
-                        # Validate category
-                        valid_cats = ["academic", "lgu", "academic_calendar"]
-                        if data.get("category") not in valid_cats:
-                            data["category"] = None
-                            
-                        return data
-                    except json.JSONDecodeError:
-                        pass
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str or "quota" in err_str.lower():
-                    continue # Try next key
-                else:
-                    print(f"Error calling Gemini for classification: {e}")
-                    
-        time.sleep(2) # brief delay before retry if all keys failed
+            for model_name in models_to_try:
+                try:
+                    client = genai.Client(api_key=api_key)
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config={
+                            "response_mime_type": "application/json",
+                            "response_schema": PostClassification,
+                            "temperature": 0.1,
+                        },
+                    )
+                    if response.text:
+                        try:
+                            data = json.loads(response.text)
+                            # Normalize "null" string to actual None
+                            for k, v in data.items():
+                                if isinstance(v, str) and v.lower() in ("null", "none", "n/a", ""):
+                                    data[k] = None
+
+                            # Validate category
+                            valid_cats = ["academic", "lgu", "academic_calendar"]
+                            if data.get("category") not in valid_cats:
+                                data["category"] = None
+
+                            return data
+                        except json.JSONDecodeError:
+                            pass
+                except Exception as e:
+                    err_str = str(e)
+                    if "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str:
+                        print(f"  [{model_name}] Quota exceeded on key, trying next...")
+                        continue
+                    else:
+                        print(f"  Error calling Gemini [{model_name}] for classification: {e}")
+
+        time.sleep(2)  # Brief delay before retry round
 
     return {"category": None, "event_name": None, "event_date": None}

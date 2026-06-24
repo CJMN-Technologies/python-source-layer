@@ -42,6 +42,8 @@ def _get_gemini_keys():
 
 OCR_CACHE: dict[str, str] = {}
 
+# OCR image pre-check keywords — if these appear in caption, skip OCR (already have text)
+# Also used as OCR relevance gate: only OCR if caption alone fails the keyword filter
 OCR_KEYWORDS = [
     "university",
     "class",
@@ -59,33 +61,36 @@ OCR_KEYWORDS = [
     "walang",
     "pasok",
     "klase",
+    # New: transport/arena
+    "concert",
+    "event",
+    "tigil",
+    "welga",
+    "araneta",
+    "suspended",
+    "lrt",
+    "train",
+    "strike",
+    "delay",
 ]
 
 
 PERMALINK_PATTERN = re.compile(r"(/posts/|/permalink|story_fbid|/photos/|pfbid|fbid=|/share/)")
 VIDEO_PATTERN = re.compile(r"(/reel/|/videos/|/watch)")
-SUSPENSION_PATTERN = re.compile(r"\b(suspend(?:ed|ion|ing)?|suspens(?:ion|yon|yo)?|suspenso|suspendido)\b", re.I)
-SUSPENSION_CONTEXT_KEYWORDS = [
-    "lrt",
-    "mrt",
-    "train",
-    "rail",
-    "line",
-    "service",
-    "station",
-    "operations",
-    "classes",
-    "safety",
-    "suspension of classes",
-    "suspensiyon",
-    "istasyon",
-    "tren",
-]
+
+# ---------------------------------------------------------------------------
+# RELEVANT KEYWORDS — Aligned to Friction Index (all stored as lowercase;
+# matching uses .casefold() for ALL CAPS / Title Case / mixed support)
+# ---------------------------------------------------------------------------
+
+# Strong: posting any of these = almost certainly a relevant event
 STRONG_RELEVANT_KEYWORDS = [
+    # Class suspension / holidays
     "no classes",
     "class suspension",
     "classes suspended",
     "suspended classes",
+    "class suspended",
     "school suspension",
     "school closed",
     "class cancellation",
@@ -105,6 +110,7 @@ STRONG_RELEVANT_KEYWORDS = [
     "asynchronous classes",
     "shift to online classes",
     "classes will resume",
+    # Tagalog class suspension
     "walang pasok",
     "walang klase",
     "walang pasok sa klase",
@@ -114,7 +120,76 @@ STRONG_RELEVANT_KEYWORDS = [
     "suspendido ang pasok",
     "pampublikong pahinga",
     "estado ng kalamidad",
+    # LGU weather
+    "weather advisory",
+    "storm signal",
+    "signal number",
+    "signal no.",
+    "bagyo",
+    "baha",
+    "orange warning",
+    "red warning",
+    "habagat",
+    "flash flood",
+    "flood advisory",
+    "state of calamity",
+    # Transport strikes (Friction: 0.9)
+    "tigil pasada",
+    "transport strike",
+    "jeepney strike",
+    "welga ng drivers",
+    "welga ng jeep",
+    "welga ng piston",
+    "welga",
+    # LRT-2 full suspension (Friction: 1.0)
+    "lrt-2 suspended",
+    "lrt suspended",
+    "lrt-2 suspension",
+    "train suspended",
+    "train suspension",
+    "full suspension",
+    "power failure",
+    "service disruption",
+    "train disruption",
+    "lrt-2 disruption",
+    "no lrt service",
+    "provisionary service",
+    "partial suspension",
+    "cubao-antipolo only",
+    "antipolo-cubao only",
+    "suspendido ang operasyon",
+    "tigil operasyon",
+    "walang serbisyo ng lrt",
+    "tigil ang lrt",
+    # Train degradation (Friction: 0.5)
+    "delayed train",
+    "train delay",
+    "lrt delay",
+    "lrt-2 delay",
+    "code yellow",
+    "code yellow advisory",
+    "degraded headway",
+    "lrt-2 advisory",
+    "lrt advisory",
+    "service interruption",
+    "delayed ang tren",
+    "delayed ang lrt",
+    # Arena / Major Events (Friction: 0.65)
+    "concert",
+    "sports event",
+    "arena event",
+    "smart araneta",
+    "araneta coliseum",
+    "big dome",
+    "araneta",
+    "philsports",
+    "moa arena",
+    "uaap",
+    "ncaa",
+    "pba game",
 ]
+
+# General context keywords — used for disambiguation
 GENERAL_RELEVANT_KEYWORDS = [
     "school",
     "university",
@@ -133,6 +208,49 @@ GENERAL_RELEVANT_KEYWORDS = [
     "storm",
     "flood",
     "baha",
+    "lrt",
+    "train",
+    "strike",
+    "concert",
+    "event",
+]
+
+# Suspension-like patterns (broader than just "suspend")
+SUSPENSION_PATTERN = re.compile(
+    r"\b(suspend(?:ed|ion|ing)?|suspens(?:ion|yon|yo)?|suspenso|suspendido"
+    r"|cancel(?:led|lation)?|postpone(?:d|ment)?|closure|closed|walang|tigil"
+    r"|delayed?|disrupted?|strike|welga)\b",
+    re.I,
+)
+
+# Context that confirms a suspension/event is relevant to LRT ridership
+SUSPENSION_CONTEXT_KEYWORDS = [
+    "lrt",
+    "mrt",
+    "train",
+    "rail",
+    "line",
+    "service",
+    "station",
+    "operations",
+    "classes",
+    "safety",
+    "suspension of classes",
+    "suspensiyon",
+    "istasyon",
+    "tren",
+    # New
+    "arena",
+    "concert",
+    "jeepney",
+    "welga",
+    "strike",
+    "power",
+    "cubao",
+    "antipolo",
+    "government",
+    "lgu",
+    "city",
 ]
 
 WEEKDAY_ALIASES = {
@@ -326,7 +444,8 @@ def extract_text_from_image(image_url: str) -> str:
             "5. Do NOT add any extra commentary or introductory text (like 'Here is the text:'). Just output the transcribed text."
         )
 
-        models_to_try = ["gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
+        # Try cheapest model first to conserve quota
+        models_to_try = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
         gemini_response = None
         
         # Loop through each API key, trying all models on it
@@ -345,7 +464,7 @@ def extract_text_from_image(image_url: str) -> str:
                     )
                     break
                 except Exception as e:
-                    if "RESOURCE_EXHAUSTED" in str(e):
+                    if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
                         print(f"  {model_name} quota exhausted on API Key #{key_idx}. Trying next model/key...")
                         continue
                     else:
@@ -370,30 +489,47 @@ def extract_text_from_image(image_url: str) -> str:
         return ""
 
 
-def is_suspension_related(text: str, image_text: str = "") -> bool:
-    """Return True if the combined text likely refers to a relevant academic/LGU or suspension-related event."""
+def is_relevant_event(text: str, image_text: str = "") -> bool:
+    """
+    Return True if the combined text likely refers to a relevant LRT ridership-
+    affecting event: class suspensions, LGU advisories, transport disruptions,
+    arena/concert events, or academic calendar events.
+
+    Uses .casefold() for case-insensitive matching — handles ALL CAPS, Title
+    Case, lowercase, and mixed-case Filipino Facebook posts equally.
+    """
     combined = (text or "") + " " + (image_text or "")
     if not combined.strip():
         return False
 
-    lowered = combined.lower()
+    lowered = combined.casefold()
 
-    if any(kw in lowered for kw in ["academic calendar", "school calendar", "collegiate calendar", "university calendar"]):
-        return False
+    # Reject generic calendar-title posts (not actionable events)
+    calendar_titles = [
+        "academic calendar",
+        "school calendar",
+        "collegiate calendar",
+        "university calendar",
+    ]
+    # Only reject if it's ONLY a calendar title post (no suspension/event context)
+    if any(kw in lowered for kw in calendar_titles):
+        # Still allow if it also contains actionable keywords
+        has_action = any(kw.casefold() in lowered for kw in [
+            "no classes", "suspended", "walang pasok", "holiday", "holiday break"
+        ])
+        if not has_action:
+            return False
 
-    # Accept clearly relevant academic or LGU phrases immediately.
+    # Accept immediately on any strong keyword match (case-insensitive)
     for kw in STRONG_RELEVANT_KEYWORDS:
-        if kw in lowered:
+        if kw.casefold() in lowered:
             return True
 
-    # Require a suspension-like term for other posts.
-    if not SUSPENSION_PATTERN.search(lowered):
-        return False
-
-    # Accept the post if it has any relevant context keyword.
-    for kw in SUSPENSION_CONTEXT_KEYWORDS + GENERAL_RELEVANT_KEYWORDS:
-        if kw in lowered:
-            return True
+    # For posts with a suspension/event signal word, check for context
+    if SUSPENSION_PATTERN.search(lowered):
+        for kw in SUSPENSION_CONTEXT_KEYWORDS + GENERAL_RELEVANT_KEYWORDS:
+            if kw.casefold() in lowered:
+                return True
 
     return False
 
@@ -567,13 +703,54 @@ def normalize_playwright_cookies(cookies: list) -> list:
     return out
 
 
-def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scrolls: int = 5) -> list[dict]:
+def _block_unnecessary_resources(route, request):
+    """Block CSS, fonts, media, and tracking pixels to speed up page loads."""
+    resource_type = request.resource_type
+    url = request.url
+    if resource_type in ("stylesheet", "font", "media"):
+        route.abort()
+        return
+    # Block known tracking/analytics domains
+    blocked_domains = [
+        "facebook.net/signals",
+        "connect.facebook.net",
+        "staticxx.facebook.com",
+        "pixel.facebook.com",
+        "an.facebook.com",
+    ]
+    if any(domain in url for domain in blocked_domains):
+        route.abort()
+        return
+    route.continue_()
+
+
+def scrape_page(
+    page_url: str,
+    cookies: list,
+    existing_urls: set = None,
+    max_scrolls: int = 8,
+    max_age_days: float = 7.0,
+) -> list[dict]:
+    """
+    Scrape a single Facebook page for relevant events.
+
+    Args:
+        page_url:      Facebook page URL to scrape.
+        cookies:       Authenticated Facebook cookies.
+        existing_urls: Set of already-known post URLs to skip (dedup).
+        max_scrolls:   How many times to scroll down per surface (default 8,
+                       covers ~1 week of posts on active pages).
+        max_age_days:  Hard cutoff — posts older than this are skipped
+                       immediately without OCR or LLM calls. Default 7 days.
+    """
     posts = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         ctx = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            # Disable images for faster loads (we only fetch specific scontent images)
+            java_script_enabled=True,
         )
         norm = normalize_playwright_cookies(cookies)
         if not norm:
@@ -585,12 +762,15 @@ def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scr
                 print(f"  Warning: add_cookies failed: {e}")
         page = ctx.new_page()
 
+        # Block unnecessary resources to speed up page loads
+        page.route("**/*", _block_unnecessary_resources)
+
         try:
             for target_url in candidate_page_urls(page_url):
                 posts_before_surface = len(posts)
                 print(f"  Opening: {target_url}")
                 try:
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
+                    page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
                 except Exception as e:
                     print(f"  Surface failed: {e}")
                     continue
@@ -603,7 +783,7 @@ def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scr
 
                     soup = BeautifulSoup(page.content(), "html.parser")
 
-                    # support multiple message selectors: plugin timeline, standard www, and legacy surfaces
+                    # Support multiple message selectors: plugin timeline, standard www, and legacy surfaces
                     message_elements = []
                     try:
                         message_elements.extend(soup.find_all("div", {"class": re.compile(r"story_body|story|_5pbx")}))
@@ -625,14 +805,29 @@ def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scr
                         if existing_urls and post_url in existing_urls:
                             continue
 
+                        # --- EARLY AGE CHECK (before any expensive calls) ---
                         age_source_text = get_post_header_text(el, caption_text)
                         post_age_days = parse_age_days(age_source_text) or parse_age_days(caption_text)
+                        
+                        # Hard cutoff: skip posts definitively older than max_age_days
+                        if post_age_days is not None and post_age_days > max_age_days:
+                            print(f"  Skipped old post ({post_age_days:.1f}d > {max_age_days}d limit).")
+                            continue
+
+                        # --- CAPTION KEYWORD PRE-CHECK (before fetching full post / OCR) ---
+                        caption_passes = is_relevant_event(caption_text)
+
+                        # Only fetch full post text if the URL is a true permalink
                         if post_url != page.url and "plugins/page.php" not in page.url:
                             full_text, fetched_post_age_days = fetch_full_post_text(ctx, post_url)
                             if full_text:
                                 caption_text = full_text
                             if fetched_post_age_days is not None:
                                 post_age_days = fetched_post_age_days
+                                # Re-check age after fetching full text
+                                if post_age_days > max_age_days:
+                                    print(f"  Skipped old post ({post_age_days:.1f}d) after permalink fetch.")
+                                    continue
 
                         if is_truncated(caption_text) and post_url != page.url and post_age_days is None:
                             full_text, fetched_post_age_days = fetch_full_post_text(ctx, post_url)
@@ -641,33 +836,49 @@ def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scr
                             if fetched_post_age_days is not None:
                                 post_age_days = fetched_post_age_days
 
-                        # strip leftover "See more"/"Tumingin pa" artifact if we couldn't expand it
+                        # Strip leftover "See more"/"Tumingin pa" artifact
                         for suffix in ["see more", "tumingin pa"]:
                             if caption_text.lower().endswith(suffix):
                                 caption_text = caption_text[: -len(suffix)].rstrip(". ").strip()
 
-                        image_container = get_ancestor(el, 3)
+                        # --- OCR: Only run if caption alone didn't pass the keyword filter ---
                         image_text = ""
-                        if image_container:
-                            images = image_container.find_all("img", {"src": True})
-                            seen_images = set()
-                            ocr_count = 0
-                            for img in images:
-                                if ocr_count >= 5:
-                                    break
-                                src = img.get("src", "") or img.get("data-src", "")
-                                if "scontent" in src and src not in seen_images:
-                                    seen_images.add(src)
-                                    ocr_result = extract_text_from_image(src)
-                                    if ocr_result:
-                                        image_text += " " + ocr_result
-                                    ocr_count += 1
-                            if ocr_count > 0:
-                                print(f"  OCR processed {ocr_count} image(s)")
+                        if not caption_passes:
+                            # Caption alone didn't match — check images for additional text
+                            image_container = get_ancestor(el, 3)
+                            if image_container:
+                                images = image_container.find_all("img", {"src": True})
+                                seen_images = set()
+                                ocr_count = 0
+                                for img in images:
+                                    if ocr_count >= 3:  # Capped at 3 images per post (down from 5)
+                                        break
+                                    src = img.get("src", "") or img.get("data-src", "")
+                                    if "scontent" in src and src not in seen_images:
+                                        seen_images.add(src)
+                                        ocr_result = extract_text_from_image(src)
+                                        if ocr_result:
+                                            image_text += " " + ocr_result
+                                        ocr_count += 1
+                                if ocr_count > 0:
+                                    print(f"  OCR processed {ocr_count} image(s)")
+                        else:
+                            # Caption already passed — still try to get image text for richer data,
+                            # but only for the FIRST image to keep it cheap
+                            image_container = get_ancestor(el, 3)
+                            if image_container:
+                                images = image_container.find_all("img", {"src": True})
+                                for img in images:
+                                    src = img.get("src", "") or img.get("data-src", "")
+                                    if "scontent" in src:
+                                        ocr_result = extract_text_from_image(src)
+                                        if ocr_result:
+                                            image_text = ocr_result
+                                        break  # Only 1 image when caption already passes
 
                         if caption_text or image_text:
-                            # Tighten filter: only keep posts that look related to suspensions
-                            if not is_suspension_related(caption_text, image_text):
+                            # Final relevance check with all text combined
+                            if not is_relevant_event(caption_text, image_text):
                                 continue
 
                             posts.append({
@@ -678,7 +889,7 @@ def scrape_page(page_url: str, cookies: list, existing_urls: set = None, max_scr
                             })
 
                     page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
-                    time.sleep(random.uniform(2.5, 4.5))
+                    time.sleep(random.uniform(2.0, 3.5))
 
                 if len(posts) > posts_before_surface:
                     break
