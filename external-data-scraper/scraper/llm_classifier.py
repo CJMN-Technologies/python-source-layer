@@ -151,4 +151,4 @@ CATEGORY null (reject — not relevant):
         if attempt < 2:
             time.sleep(2 ** attempt)  # backoff between full rounds
 
-    return {"category": None, "event_name": None, "event_date": None}
+    return {"category": None, "event_name": None, "event_date": None, "llm_failed": True}

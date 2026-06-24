@@ -238,11 +238,17 @@ def run_pipeline(batch: str = "all"):
             category = _determine_category(llm_res, page)
 
             if category is None:
-                print("  LLM rejected post (Not a valid event/calendar).")
-                continue
-
-            event_name = llm_res.get("event_name")
-            event_date = llm_res.get("event_date")
+                if llm_res.get("llm_failed") and pre_category:
+                    category = pre_category
+                    event_name = f"[Fallback] Event detected via keywords ({category})"
+                    event_date = "Not specified"
+                    print(f"  [Fallback] Gemini keys exhausted. Falling back to keyword category: {category}")
+                else:
+                    print("  LLM rejected post (Not a valid event/calendar).")
+                    continue
+            else:
+                event_name = llm_res.get("event_name")
+                event_date = llm_res.get("event_date")
 
             now = datetime.now(timezone.utc)
             if post_age_days is not None:
