@@ -38,9 +38,38 @@ def save_processed(processed: set):
         json.dump(list(processed), f)
 
 
-def append_to_excel(data: list[dict]):
+def get_acronym(name: str) -> str:
+    mapping = {
+        "polytechnic university of the philippines main": "PUP",
+        "pup sentral na konseho ng mag-aaral": "PUP_SKM",
+        "university of the east manila": "UE",
+        "university of the east student council": "UE_USC",
+        "far eastern university manila": "FEU",
+        "feu central student organization": "FEU_CSO",
+        "university of santo tomas": "UST",
+        "ust central student council": "UST_CSC",
+        "san beda university": "SBU",
+        "san beda student council": "SBU_SC",
+        "uerm memorial medical center": "UERM",
+        "uerm medicine student council": "UERM_MSC",
+        "st. paul university quezon city": "SPUQC",
+    }
+    lower_name = name.lower()
+    if lower_name in mapping:
+        return mapping[lower_name]
+    words = name.split()
+    return "".join([w[0].upper() for w in words if w[0].isalpha()])
+
+def append_to_excel(data: list[dict], source_name: str):
     if not data:
         return
+        
+    calendars_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "AcademicCalendars")
+    os.makedirs(calendars_dir, exist_ok=True)
+    
+    acronym = get_acronym(source_name)
+    output_excel = os.path.join(calendars_dir, f"{acronym}_AcademicCalendar.xlsx")
+    
     df_new = pd.DataFrame(data)
     cols = ["id", "station", "source_name", "source_url", "scraped_at", "post_date", "event_date", "event_name", "category"]
     for col in cols:
@@ -48,16 +77,16 @@ def append_to_excel(data: list[dict]):
             df_new[col] = ""
     df_new = df_new[cols]
     
-    if os.path.exists(OUTPUT_EXCEL):
+    if os.path.exists(output_excel):
         try:
-            df_old = pd.read_excel(OUTPUT_EXCEL)
+            df_old = pd.read_excel(output_excel)
             df_combined = pd.concat([df_old, df_new], ignore_index=True)
         except Exception:
             df_combined = df_new
     else:
         df_combined = df_new
         
-    df_combined.to_excel(OUTPUT_EXCEL, index=False)
+    df_combined.to_excel(output_excel, index=False)
 
 def scrape_calendar(page_url: str, page_name: str, page_station: str, cookies: list, max_scrolls: int = 50):
     processed = load_processed()
@@ -196,7 +225,7 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str, cookies: l
                             "category": "academic_calendar"
                         }]
                         
-                        append_to_excel(data)
+                        append_to_excel(data, page_name)
                         posts_found.extend(data)
                         print(f"     Saved calendar row to Excel.")
                         # Update processed on success
