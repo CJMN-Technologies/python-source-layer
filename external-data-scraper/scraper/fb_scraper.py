@@ -730,20 +730,23 @@ def scrape_page(
     existing_urls: set = None,
     max_scrolls: int = 8,
     max_age_days: float = 7.0,
+    max_ocr_per_page: int = 10,
 ) -> list[dict]:
     """
     Scrape a single Facebook page for relevant events.
 
     Args:
-        page_url:      Facebook page URL to scrape.
-        cookies:       Authenticated Facebook cookies.
-        existing_urls: Set of already-known post URLs to skip (dedup).
-        max_scrolls:   How many times to scroll down per surface (default 8,
-                       covers ~1 week of posts on active pages).
-        max_age_days:  Hard cutoff — posts older than this are skipped
-                       immediately without OCR or LLM calls. Default 7 days.
+        page_url:          Facebook page URL to scrape.
+        cookies:           Authenticated Facebook cookies.
+        existing_urls:     Set of already-known post URLs to skip (dedup).
+        max_scrolls:       How many times to scroll down per surface (default 8).
+        max_age_days:      Hard cutoff — posts older than this are skipped
+                           immediately without OCR or LLM calls. Default 7 days.
+        max_ocr_per_page:  Max total Gemini Vision OCR calls across the whole page
+                           to prevent quota exhaustion on busy pages. Default 10.
     """
     posts = []
+    page_ocr_count = 0  # tracks total OCR calls for this page
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -841,9 +844,10 @@ def scrape_page(
                             if caption_text.lower().endswith(suffix):
                                 caption_text = caption_text[: -len(suffix)].rstrip(". ").strip()
 
-                        # --- OCR: Only run if caption alone didn't pass the keyword filter ---
+                        # --- OCR: Only run if caption alone didn't pass the keyword filter
+                        # AND the per-page OCR budget hasn't been exhausted ---
                         image_text = ""
-                        if not caption_passes:
+                        if not caption_passes and page_ocr_count < max_ocr_per_page:
                             # Caption alone didn't match — check images for additional text
                             image_container = get_ancestor(el, 3)
                             if image_container:
@@ -851,7 +855,7 @@ def scrape_page(
                                 seen_images = set()
                                 ocr_count = 0
                                 for img in images:
-                                    if ocr_count >= 3:  # Capped at 3 images per post (down from 5)
+                                    if ocr_count >= 3 or page_ocr_count >= max_ocr_per_page:
                                         break
                                     src = img.get("src", "") or img.get("data-src", "")
                                     if "scontent" in src and src not in seen_images:
@@ -860,21 +864,9 @@ def scrape_page(
                                         if ocr_result:
                                             image_text += " " + ocr_result
                                         ocr_count += 1
+                                        page_ocr_count += 1
                                 if ocr_count > 0:
-                                    print(f"  OCR processed {ocr_count} image(s)")
-                        else:
-                            # Caption already passed — still try to get image text for richer data,
-                            # but only for the FIRST image to keep it cheap
-                            image_container = get_ancestor(el, 3)
-                            if image_container:
-                                images = image_container.find_all("img", {"src": True})
-                                for img in images:
-                                    src = img.get("src", "") or img.get("data-src", "")
-                                    if "scontent" in src:
-                                        ocr_result = extract_text_from_image(src)
-                                        if ocr_result:
-                                            image_text = ocr_result
-                                        break  # Only 1 image when caption already passes
+                                    print(f"  OCR processed {ocr_count} image(s) [page budget: {page_ocr_count}/{max_ocr_per_page}]")
 
                         if caption_text or image_text:
                             # Final relevance check with all text combined
