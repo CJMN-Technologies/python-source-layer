@@ -50,9 +50,19 @@ ACADEMIC_KEYWORDS = [
     "kanselado ang klase",
     "pagpapatuloy ng klase",
     "pasukan",
-    "class schedule",
-    "class suspension",
-    "school suspension",
+    "enrollment",
+    "enrolment",
+    "orientation",
+    "freshmen",
+    "graduation",
+    "midterms",
+    "finals",
+    "examination",
+    "exam",
+    "academic calendar",
+    "school calendar",
+    "collegiate calendar",
+    "university calendar",
 ]
 
 LGU_KEYWORDS = [
@@ -90,9 +100,6 @@ LGU_KEYWORDS = [
 
 def classify_post(text: str) -> str | None:
     text_lower = text.lower()
-
-    if any(kw in text_lower for kw in ["academic calendar", "school calendar", "collegiate calendar", "university calendar"]):
-        return None
 
     academic_match = any(kw in text_lower for kw in ACADEMIC_KEYWORDS)
     lgu_match = any(kw in text_lower for kw in LGU_KEYWORDS)

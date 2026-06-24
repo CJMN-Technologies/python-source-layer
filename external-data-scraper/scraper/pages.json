@@ -13,7 +13,7 @@
   {"station": "Legarda", "name": "San Beda University", "priority": "medium", "url": "https://www.facebook.com/SBUManilaOfficial"},
   {"station": "Legarda", "name": "San Beda Student Council", "priority": "medium", "url": "https://www.facebook.com/sanbedasc"},
 
-  {"station": "Pureza", "name": "Polytechnic University of the Philippines Main", "priority": "high", "url": "https://www.facebook.com/profile.php?id=100069948535295"},
+  {"station": "Pureza", "name": "Polytechnic University of the Philippines Main", "priority": "low", "url": "https://www.facebook.com/profile.php?id=100069948535295"},
   {"station": "Pureza", "name": "PUP Sentral na Konseho ng Mag-aaral", "priority": "high", "url": "https://www.facebook.com/thepupskm"},
 
   {"station": "V. Mapa", "name": "UERM Memorial Medical Center", "priority": "low", "url": "https://www.facebook.com/UERMMMC"},
