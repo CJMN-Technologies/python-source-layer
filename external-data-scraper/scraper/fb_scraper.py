@@ -11,6 +11,7 @@ import io
 import re
 from datetime import datetime
 from urllib.parse import quote, urlparse
+from unicode_normalizer import normalize_unicode_text
 
 # Lazy-initialized list of Gemini API keys
 _gemini_keys = None
@@ -371,6 +372,7 @@ def strip_emojis(text: str) -> str:
 
 def clean_ocr_text(text: str) -> str:
     text = strip_emojis(text)
+    text = normalize_unicode_text(text)  # Convert stylized Unicode fonts to plain ASCII
     text = re.sub(r"[^\S\r\n]+", " ", text)
     text = re.sub(r"\s*\n\s*", "\n", text)
     lines = []
@@ -502,6 +504,8 @@ def is_relevant_event(text: str, image_text: str = "") -> bool:
     if not combined.strip():
         return False
 
+    # Normalize decorative Unicode fonts (bold, italic, script, etc.) to plain ASCII
+    combined = normalize_unicode_text(combined)
     lowered = combined.casefold()
 
     # Reject generic calendar-title posts (not actionable events)

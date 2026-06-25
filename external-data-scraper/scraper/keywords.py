@@ -11,6 +11,8 @@
 # Keyword groups are aligned to external.friction_weight table.
 # ============================================================
 
+from unicode_normalizer import normalize_unicode_text
+
 
 # ---------------------------------------------------------------------------
 # GROUP 1 — CLASS SUSPENSION / SCHOOL HOLIDAY (friction: high)
@@ -371,7 +373,7 @@ ACADEMIC_CONTEXT_KEYWORDS = [
 
 def _casefold_match(keyword_list: list[str], text: str) -> bool:
     """Return True if any keyword matches the casefolded text."""
-    casefolded = text.casefold()
+    casefolded = normalize_unicode_text(text).casefold()
     return any(kw.casefold() in casefolded for kw in keyword_list)
 
 
@@ -389,7 +391,8 @@ def classify_post(text: str) -> str | None:
     if not text or not text.strip():
         return None
 
-    lowered = text.casefold()
+    # Normalize decorative Unicode fonts (bold, italic, script, etc.) to plain ASCII
+    lowered = normalize_unicode_text(text).casefold()
 
     academic_match = any(kw.casefold() in lowered for kw in ACADEMIC_KEYWORDS)
     lgu_match = any(kw.casefold() in lowered for kw in LGU_KEYWORDS)

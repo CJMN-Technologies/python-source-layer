@@ -2,6 +2,8 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -120,3 +122,66 @@ def send_pipeline_alert(new_events: list):
     """
     
     _send_email(subject, html)
+
+
+def send_calendar_with_attachment(page_name: str, excel_path: str, source_url: str = None):
+    """Send an email with the generated academic calendar Excel file attached."""
+    if not SENDER_EMAIL or not SENDER_PASSWORD or not RECEIVER_EMAILS:
+        print("Warning: Email credentials not set. Skipping calendar attachment email.")
+        return
+
+    recipients = [email.strip() for email in RECEIVER_EMAILS.split(",") if email.strip()]
+    if not recipients:
+        return
+
+    filename = os.path.basename(excel_path)
+    subject = f"📅 Academic Calendar Detected: {page_name}"
+
+    html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333;">
+        <h2 style="color: #0056b3;">Academic Calendar Post Detected!</h2>
+        <p>The automated calendar scraper has found a new academic calendar release.</p>
+        <ul>
+          <li><b>University / Page:</b> {page_name}</li>
+          <li><b>File:</b> {filename}</li>
+        </ul>
+    """
+
+    if source_url:
+        html += f'<p><b>Source Post:</b> <a href="{source_url}">View Facebook Post</a></p>'
+
+    html += """
+        <p>The Excel file is attached. Please fill in the <b>event_name</b> and <b>event_date</b> columns manually.</p>
+        <p>This data has also been saved to the <code>academic_lgu_events</code> table in Supabase.</p>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = ", ".join(recipients)
+    msg['Subject'] = subject
+    msg.attach(MIMEText(html, 'html'))
+
+    # Attach Excel file
+    if os.path.exists(excel_path):
+        try:
+            with open(excel_path, "rb") as f:
+                part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={filename}")
+                msg.attach(part)
+        except Exception as e:
+            print(f"  Warning: Could not attach Excel file: {e}")
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print(f"Calendar email with attachment sent to {len(recipients)} recipients!")
+    except Exception as e:
+        print(f"Failed to send calendar email: {e}")
