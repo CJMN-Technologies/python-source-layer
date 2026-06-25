@@ -35,13 +35,19 @@ def fetch_weather_station(lat: float, lon: float, days: int = 7) -> dict:
             "wind_speed_max": daily["wind_speed_10m_max"][i],
         })
 
+    # Open-Meteo returns time strings in local Manila time (since we passed timezone=Asia/Manila).
+    # Append +08:00 timezone offset so PostgreSQL interprets it correctly as PHT instead of UTC.
+    observed_time = current["time"]
+    if "+" not in observed_time and "Z" not in observed_time:
+        observed_time = f"{observed_time}+08:00"
+
     return {
         "current": {
             "temperature": current["temperature_2m"],
             "humidity": current["relative_humidity_2m"],
             "rainfall_mm": current["precipitation"],
             "wind_speed": current["wind_speed_10m"],
-            "observed_at": current["time"],
+            "observed_at": observed_time,
         },
         "forecasts": forecasts,
     }

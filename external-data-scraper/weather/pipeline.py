@@ -34,8 +34,24 @@ def run_weather_pipeline(days: int = 7):
 
     for station in stations:
         print(f"\nProcessing station: {station['station']}")
+        weather_data = None
+        for attempt in range(4):
+            try:
+                weather_data = fetch_weather_station(station["latitude"], station["longitude"], days)
+                break
+            except Exception as e:
+                if attempt < 3:
+                    wait_time = (attempt + 1) * 5
+                    print(f"  Fetch failed: {e}. Retrying in {wait_time}s... (Attempt {attempt+1}/4)")
+                    time.sleep(wait_time)
+                else:
+                    print(f"  Fetch failed after all attempts: {e}")
+
+        if not weather_data:
+            print(f"  Skipping station {station['station']} due to persistent errors.")
+            continue
+
         try:
-            weather_data = fetch_weather_station(station["latitude"], station["longitude"], days)
             fetched_at = datetime.now(timezone.utc)
             
             # --- UPDATE OBSERVATION ---
