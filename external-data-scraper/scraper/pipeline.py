@@ -22,7 +22,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 MAX_AGE_DAYS = 7.0
 
 # Default number of scrolls per page (can be overridden per page in pages.json)
-DEFAULT_MAX_SCROLLS = 8
+DEFAULT_MAX_SCROLLS = 3
 
 
 def _next_ext_id_for_category(category: str) -> str:
@@ -97,9 +97,10 @@ def load_pages(batch: str = "all") -> list[dict]:
         return all_pages
 
     target = batch.upper()
-    filtered = [p for p in all_pages if p.get("batch", "").upper() == target]
+    targets = [t.strip() for t in target.split(",") if t.strip()]
+    filtered = [p for p in all_pages if p.get("batch", "").upper() in targets]
     if not filtered:
-        print(f"Warning: No pages found for batch '{target}'. Running all pages.")
+        print(f"Warning: No pages found for batch(es) '{target}'. Running all pages.")
         return all_pages
     return filtered
 

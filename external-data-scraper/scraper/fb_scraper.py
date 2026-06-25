@@ -785,6 +785,8 @@ def scrape_page(
 
                 click_see_more_buttons(page)
 
+                surface_success = False
+
                 for i in range(max_scrolls):
                     print(f"  Scrolling... ({i + 1}/{max_scrolls})")
 
@@ -798,6 +800,9 @@ def scrape_page(
                         pass
                     message_elements.extend(soup.find_all("div", {"data-ad-preview": "message"}))
                     message_elements.extend(soup.find_all("div", {"role": "article"}))
+
+                    if message_elements:
+                        surface_success = True
 
                     for el in message_elements:
 
@@ -887,7 +892,8 @@ def scrape_page(
                     page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
                     time.sleep(random.uniform(2.0, 3.5))
 
-                if len(posts) > posts_before_surface:
+                if surface_success:
+                    print("  Timeline loaded successfully. Skipping fallback surface.")
                     break
 
         except Exception as e:
