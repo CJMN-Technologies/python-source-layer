@@ -153,7 +153,6 @@ def send_calendar_with_attachment(page_name: str, excel_path: str, source_url: s
 
     html += """
         <p>The Excel file is attached. Please fill in the <b>event_name</b> and <b>event_date</b> columns manually.</p>
-        <p>This data has also been saved to the <code>academic_lgu_events</code> table in Supabase.</p>
       </body>
     </html>
     """

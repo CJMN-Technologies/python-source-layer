@@ -420,22 +420,6 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
                             "category": "academic_calendar",
                         }
 
-                        # Save to Supabase
-                        try:
-                            supabase.schema("external").table("academic_lgu_events").upsert({
-                                "id": ext_id,
-                                "station": page_station,
-                                "source_name": page_name,
-                                "source_url": post_url,
-                                "post_text": combined_text[:2000],
-                                "category": "academic_calendar",
-                                "scraped_at": now.isoformat(),
-                                "post_date": post_date.isoformat(),
-                            }).execute()
-                            print(f"  >> Saved to Supabase: {ext_id}")
-                        except Exception as e:
-                            print(f"  Failed to save to Supabase: {e}")
-
                         # Generate Excel
                         excel_path = generate_calendar_excel([row], page_name)
                         print(f"  >> Excel saved: {excel_path}")
