@@ -901,7 +901,14 @@ def scrape_page(
                                 "age_days": post_age_days
                             })
 
-                    page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
+                    try:
+                        page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
+                    except Exception as e:
+                        if "navigation" in str(e).lower() or "context was destroyed" in str(e).lower():
+                            print("  Navigation detected during scroll. Stopping scroll.")
+                            break
+                        else:
+                            print(f"  Warning: Scroll failed ({e})")
                     time.sleep(random.uniform(2.0, 3.5))
 
                 if surface_success:
