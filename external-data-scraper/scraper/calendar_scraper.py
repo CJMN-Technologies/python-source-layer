@@ -313,7 +313,19 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
 
                 for i in range(max_scrolls):
                     print(f"  Scrolling... ({i + 1}/{max_scrolls})")
-                    soup = BeautifulSoup(page.content(), "html.parser")
+                    try:
+                        html_content = page.content()
+                    except Exception as e:
+                        if "navigating" in str(e).lower():
+                            try:
+                                page.wait_for_load_state("domcontentloaded", timeout=10000)
+                                html_content = page.content()
+                            except Exception:
+                                continue
+                        else:
+                            continue
+                    
+                    soup = BeautifulSoup(html_content, "html.parser")
 
                     message_elements = []
                     try:

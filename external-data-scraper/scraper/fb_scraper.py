@@ -790,7 +790,19 @@ def scrape_page(
                 for i in range(max_scrolls):
                     print(f"  Scrolling... ({i + 1}/{max_scrolls})")
 
-                    soup = BeautifulSoup(page.content(), "html.parser")
+                    try:
+                        html_content = page.content()
+                    except Exception as e:
+                        if "navigating" in str(e).lower():
+                            try:
+                                page.wait_for_load_state("domcontentloaded", timeout=10000)
+                                html_content = page.content()
+                            except Exception:
+                                continue
+                        else:
+                            continue
+
+                    soup = BeautifulSoup(html_content, "html.parser")
 
                     # Support multiple message selectors: plugin timeline, standard www, and legacy surfaces
                     message_elements = []
