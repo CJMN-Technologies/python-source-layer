@@ -61,4 +61,3 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update academic calendars [skip ci]"
-          file_pattern: "external-data-scraper/AcademicCalendars/*.xlsx external-data-scraper/scraper/processed_calendars.json"
