@@ -39,22 +39,26 @@ This avoids one huge README while still giving each teammate the context they ne
 | Direct PostgreSQL client | `psycopg2-binary` |
 | Data processing | `pandas`, `openpyxl` |
 | Web scraping | Playwright, BeautifulSoup, Requests |
-| OCR | Tesseract OCR, Pillow, pytesseract |
+| OCR & Classification | Google Gemini 2.0 Flash (`google-genai`) |
 | Weather API | Open-Meteo Forecast API |
+| Email Alerts | `smtplib` (SMTP) |
 | Scheduling | GitHub Actions cron, APScheduler for local long-running schedulers |
 | Configuration | `.env`, GitHub Actions secrets |
 
 ## Environment Variables
 
-The repo uses two kinds of database access:
+The repo uses several secrets and environment variables for its pipelines:
 
 | Variable | Used By | Purpose |
 | --- | --- | --- |
 | `SUPABASE_URL` | `external-data-scraper/scraper`, `external-data-scraper/weather` | Supabase project URL for the REST client. |
 | `SUPABASE_KEY` | `external-data-scraper/scraper`, `external-data-scraper/weather` | Supabase API key for the REST client. |
 | `DATABASE_URL` | `internal-data-extractor`, external workbook ingestions | PostgreSQL connection URL for direct ETL loading. |
-| `PGSSLROOTCERT` or `SUPABASE_SSL_ROOT_CERT` | Direct PostgreSQL ingestion scripts | Path to the Supabase SSL root certificate. |
-| `FB_C_USER`, `FB_XS`, `FB_DATR`, `FB_FR`, `FB_SB` | Facebook scraper | Facebook session cookies used by Playwright. |
+| `PGSSLROOTCERT` | Direct PostgreSQL ingestion scripts | Path to the Supabase SSL root certificate. |
+| `GEMINI_API_KEY` | Facebook scraper | API key for Gemini 2.0 Flash (used for OCR and text classification). Can be a comma-separated list of keys for rotation. |
+| `FB_C_USER`, `FB_XS`, `FB_DATR`, `FB_FR`, `FB_SB` | Facebook scraper | Primary Facebook session cookies used by Playwright. |
+| `FB_C_USER_1`, `FB_XS_1`, etc. | Facebook scraper | Backup Facebook session cookies used in case of primary account blocking. |
+| `SENDER_EMAIL`, `SENDER_PASSWORD`, `RECEIVER_EMAIL` | Facebook scraper | Used to send automated crash alerts and academic calendar attachments via email. |
 
 Do not commit `.env`, API keys, cookies, certificates, source workbooks, logs, or generated cache files.
 
@@ -62,11 +66,9 @@ Do not commit `.env`, API keys, cookies, certificates, source workbooks, logs, o
 
 The active workflow files are in `.github/workflows/` at the repository root:
 
-- `scraper.yml` runs the Facebook scraper.
-- `weather-observations.yml` updates current weather observations hourly.
-- `weather-forecasts.yml` updates rolling forecast rows daily.
-
-If folder paths change again, update these workflows at the same time.
+- `events_pipeline.yml` runs the Facebook events scraper daily in batched intervals to prevent account blocking.
+- `calendar_scraper.yml` runs the academic calendar scraper every 5 days and commits new `.xlsx` files back to the repository.
+- `weather_pipeline.yml` updates current weather observations and forecasts daily.
 
 ## Security Notes
 
