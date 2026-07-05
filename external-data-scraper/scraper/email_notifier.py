@@ -5,6 +5,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -85,38 +86,98 @@ def send_cookie_alert():
     
     _send_email(subject, html)
 
+def _format_event_date(date_str: str) -> str:
+    if not date_str or date_str.lower() in ("n/a", "not specified", "null", "none"):
+        return "Not specified"
+    date_str = date_str.strip()
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.strftime("%B %d, %Y")
+    except Exception:
+        pass
+    
+    # Try parsing range e.g. YYYY-MM-DD to YYYY-MM-DD
+    import re
+    range_match = re.match(r"^(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$", date_str, re.IGNORECASE)
+    if range_match:
+        try:
+            start_dt = datetime.strptime(range_match.group(1), "%Y-%m-%d")
+            end_dt = datetime.strptime(range_match.group(2), "%Y-%m-%d")
+            return f"{start_dt.strftime('%B %d, %Y')} to {end_dt.strftime('%B %d, %Y')}"
+        except Exception:
+            pass
+    return date_str
+
+def _format_scraped_at(scraped_at_str: str) -> str:
+    if not scraped_at_str:
+        return "N/A"
+    try:
+        # Standardize ISO timestamp format
+        clean_str = scraped_at_str.split(".")[0]
+        if clean_str.endswith("Z"):
+            clean_str = clean_str[:-1]
+        dt = datetime.fromisoformat(clean_str)
+        return dt.strftime("%B %d, %Y, %I:%M %p")
+    except Exception:
+        return scraped_at_str
+
+def _format_category(cat: str) -> str:
+    if not cat:
+        return "N/A"
+    mapping = {
+        "academic": "Academic",
+        "lgu": "LGU",
+        "pagasa": "PAGASA",
+        "academic_calendar": "Academic Calendar"
+    }
+    return mapping.get(cat.lower(), cat.capitalize())
+
 def send_pipeline_alert(new_events: list):
     subject = f"🔔 LRT-2 Scraper: {len(new_events)} New Events Found!"
     
     html = f"""
     <html>
-      <body style="font-family: Arial, sans-serif; color: #333;">
-        <h2 style="color: #2e7d32;">New Events Extracted</h2>
-        <p>The automated scraper has successfully extracted and classified new events into Supabase.</p>
-        <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
-          <tr style="background-color: #f2f2f2;">
-            <th>University/LGU</th>
-            <th>Category</th>
-            <th>Event Name</th>
-            <th>Event Date</th>
-            <th>Link</th>
-          </tr>
+      <body style="font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f9f9f9;">
+        <div style="max-width: 900px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border-top: 5px solid #2e7d32;">
+          <h2 style="color: #2e7d32; margin-top: 0; font-size: 24px;">New Events Extracted</h2>
+          <p style="font-size: 15px; line-height: 1.5; color: #555;">The automated scraper has successfully extracted and classified new events into Supabase.</p>
+          <table border="0" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; margin-top: 20px; font-size: 14px;">
+            <thead>
+              <tr style="background-color: #f2f5f3; text-align: left; border-bottom: 2px solid #2e7d32;">
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">University/LGU</th>
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Category</th>
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Event Name</th>
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Event Date</th>
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Date Scraped</th>
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Link</th>
+              </tr>
+            </thead>
+            <tbody>
     """
     
     for ev in new_events:
+        formatted_date = _format_event_date(ev.get('event_date', ''))
+        formatted_scraped = _format_scraped_at(ev.get('scraped_at', ''))
+        formatted_cat = _format_category(ev.get('category', ''))
+        
         html += f"""
-          <tr>
-            <td>{ev.get('source_name', '')}</td>
-            <td>{ev.get('category', '')}</td>
-            <td>{ev.get('event_name', '')}</td>
-            <td>{ev.get('event_date', '')}</td>
-            <td><a href="{ev.get('url', '#')}">View Post</a></td>
-          </tr>
+              <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 12px 8px; font-weight: bold; color: #333;">{ev.get('source_name', '')}</td>
+                <td style="padding: 12px 8px;"><span style="background-color: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{formatted_cat}</span></td>
+                <td style="padding: 12px 8px; color: #555;">{ev.get('event_name', '')}</td>
+                <td style="padding: 12px 8px; font-weight: bold; color: #444;">{formatted_date}</td>
+                <td style="padding: 12px 8px; color: #666; font-size: 13px;">{formatted_scraped}</td>
+                <td style="padding: 12px 8px;"><a href="{ev.get('url', '#')}" style="color: #0288d1; text-decoration: none; font-weight: bold;">View Post</a></td>
+              </tr>
         """
         
     html += """
-        </table>
-        <p><i>This data is now available in the academic_lgu_events table in Supabase.</i></p>
+            </tbody>
+          </table>
+          <p style="font-size: 13px; color: #888; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px;">
+            <i>This data is now available in the academic_lgu_events table in Supabase.</i>
+          </p>
+        </div>
       </body>
     </html>
     """

@@ -281,6 +281,7 @@ def run_pipeline(batch: str = "all"):
                     "category":    category,
                     "event_name":  event_name or "N/A",
                     "event_date":  event_date or "N/A",
+                    "scraped_at":  now.isoformat(),
                     "url":         post.get("source_url", page["url"])
                 })
                 print(f"  >> Saved: [{category}] {event_name or post['text'][:60]}")

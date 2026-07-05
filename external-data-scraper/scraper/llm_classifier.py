@@ -86,9 +86,8 @@ CATEGORY null (reject — not relevant):
 
 === EXTRACTION RULES ===
 - For "academic" and "lgu": extract event_name (concise, e.g. "Class Suspension due to Typhoon Carina")
-  and event_date (e.g. "2026-06-25" or "June 25-26, 2026"). If date is unclear, write "Not specified".
+  and event_date. The event_date MUST be formatted as YYYY-MM-DD. If it spans multiple days, format as "YYYY-MM-DD to YYYY-MM-DD". If the date is unclear, write "Not specified".
 - For "academic_calendar": leave event_name and event_date as null.
-- For null: leave everything as null.
 - Output ONLY valid JSON matching the schema. Do not add explanations.
 
 === POST TEXT ===
