@@ -783,6 +783,16 @@ def scrape_page(
                     continue
                 time.sleep(3)
 
+                # Check for login wall — cookies expired
+                try:
+                    if page.locator("text=You must log in to continue").count() > 0 or \
+                       page.locator("text=See more of").count() > 0:
+                        print("  Login wall detected! Cookies likely expired.")
+                        browser.close()
+                        return [{"_cookie_expired": True}]
+                except Exception:
+                    pass
+
                 click_see_more_buttons(page)
 
                 surface_success = False

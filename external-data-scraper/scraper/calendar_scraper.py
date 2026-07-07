@@ -34,7 +34,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 import pandas as pd
 
-from auth import get_all_cookie_profiles
+from auth import get_all_cookie_profiles_labeled
 from email_notifier import send_calendar_with_attachment, send_cookie_alert
 from fb_scraper import (
     candidate_page_urls, click_see_more_buttons, normalize_playwright_cookies,
@@ -479,13 +479,14 @@ if __name__ == "__main__":
     with open(os.path.join(os.path.dirname(__file__), "pages.json"), "r", encoding="utf-8") as f:
         all_pages = json.load(f)
 
-    cookie_profiles = get_all_cookie_profiles()
+    cookie_profiles = get_all_cookie_profiles_labeled()
     if not cookie_profiles:
         print("Error: No Facebook cookies found in environment.")
         exit(1)
 
     active_profile_idx = 0
-    cookies = cookie_profiles[active_profile_idx]
+    cookies = cookie_profiles[active_profile_idx]["cookies"]
+    expired_accounts = []  # Track which accounts hit login walls
 
     # Only scrape university/school pages — skip LGUs and weather agencies
     ignore_keywords = ["pagasa", "public information office", "pio", "government", "municipality"]
@@ -503,14 +504,20 @@ if __name__ == "__main__":
             result = scrape_calendar(p['url'], p['name'], p['station'], cookies)
 
             if result and result[0] == "COOKIE_EXPIRED":
+                profile = cookie_profiles[active_profile_idx]
+                account_info = {"account_label": profile["label"], "env_suffix": profile["env_suffix"]}
+                if account_info not in expired_accounts:
+                    expired_accounts.append(account_info)
+                print(f"  Cookie expired for {profile['label']}!")
+
                 active_profile_idx += 1
                 if active_profile_idx < len(cookie_profiles):
-                    print(f"  Account blocked! Rotating to backup #{active_profile_idx + 1}...")
-                    cookies = cookie_profiles[active_profile_idx]
+                    print(f"  Rotating to {cookie_profiles[active_profile_idx]['label']}...")
+                    cookies = cookie_profiles[active_profile_idx]["cookies"]
                     continue
                 else:
                     print("\nAborting: ALL Facebook accounts are blocked/expired.")
-                    send_cookie_alert()
+                    send_cookie_alert(expired_accounts, scraper_name="Calendar Scraper")
                     exit(1)
 
             if isinstance(result, list):
@@ -518,5 +525,10 @@ if __name__ == "__main__":
                     if isinstance(r, dict):
                         all_new.append(r)
             break
+
+    # Send cookie alert if any accounts expired (even if some worked)
+    if expired_accounts:
+        print(f"Sending cookie expiration alert for {len(expired_accounts)} account(s)...")
+        send_cookie_alert(expired_accounts, scraper_name="Calendar Scraper")
 
     print(f"\n=== Done! {len(all_new)} calendar(s) found ===")

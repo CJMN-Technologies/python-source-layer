@@ -4,11 +4,11 @@ import sys
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from auth import get_all_cookie_profiles
+from auth import get_all_cookie_profiles_labeled
 from fb_scraper import scrape_page
 from keywords import classify_post
 from llm_classifier import classify_post_llm
-from email_notifier import send_pipeline_alert
+from email_notifier import send_pipeline_alert, send_cookie_alert
 
 # Fix Windows console encoding crash on special characters (e.g. arrows, checkmarks)
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
@@ -172,20 +172,22 @@ def run_pipeline(batch: str = "all"):
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
-    # Load all cookie profiles for rotation
-    cookie_profiles = get_all_cookie_profiles()
+    # Load all cookie profiles (with labels) for rotation
+    cookie_profiles = get_all_cookie_profiles_labeled()
     if not cookie_profiles:
         print("Warning: No FB cookie profiles found. Scraping may fail.")
-        cookie_profiles = [[]]
+        cookie_profiles = [{"cookies": [], "label": "None", "env_suffix": ""}]
 
     total_saved = 0
     newly_saved_events = []
+    expired_accounts = []  # Track which accounts hit login walls
 
     for page_idx, page in enumerate(pages):
         print(f"\n[{page_idx + 1}/{len(pages)}] Scraping: {page['name']} ({page['station']}) — Batch {page.get('batch','?')}")
 
         # Rotate cookie profiles across pages
-        cookies = cookie_profiles[page_idx % len(cookie_profiles)]
+        profile = cookie_profiles[page_idx % len(cookie_profiles)]
+        cookies = profile["cookies"]
 
         # Respect per-page max_scrolls override (e.g. low-activity pages)
         page_max_scrolls = page.get("max_scrolls", DEFAULT_MAX_SCROLLS)
@@ -197,6 +199,43 @@ def run_pipeline(batch: str = "all"):
             max_scrolls=page_max_scrolls,
             max_age_days=MAX_AGE_DAYS,
         )
+
+        # Check if cookies expired (login wall detected)
+        if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
+            account_info = {"account_label": profile["label"], "env_suffix": profile["env_suffix"]}
+            if account_info not in expired_accounts:
+                expired_accounts.append(account_info)
+            print(f"  Cookie expired for {profile['label']}! Trying next account...")
+
+            # Try remaining profiles for this page
+            recovered = False
+            for fallback_idx, fallback_profile in enumerate(cookie_profiles):
+                if fallback_profile["label"] == profile["label"]:
+                    continue  # skip the one that just failed
+                fallback_info = {"account_label": fallback_profile["label"], "env_suffix": fallback_profile["env_suffix"]}
+                if fallback_info in expired_accounts:
+                    continue  # skip already-expired accounts
+
+                print(f"  Retrying with {fallback_profile['label']}...")
+                posts = scrape_page(
+                    page["url"],
+                    fallback_profile["cookies"],
+                    existing_urls=existing_urls,
+                    max_scrolls=page_max_scrolls,
+                    max_age_days=MAX_AGE_DAYS,
+                )
+                if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
+                    if fallback_info not in expired_accounts:
+                        expired_accounts.append(fallback_info)
+                    print(f"  Cookie also expired for {fallback_profile['label']}!")
+                    continue
+                else:
+                    recovered = True
+                    break
+
+            if not recovered:
+                print(f"  All accounts expired. Skipping page: {page['name']}")
+                continue
 
         for post in posts:
             post_age_days = post.get("age_days")
@@ -293,6 +332,10 @@ def run_pipeline(batch: str = "all"):
     if newly_saved_events:
         print("Sending email alert for new events...")
         send_pipeline_alert(newly_saved_events)
+
+    if expired_accounts:
+        print(f"Sending cookie expiration alert for {len(expired_accounts)} account(s)...")
+        send_cookie_alert(expired_accounts, scraper_name="Events Pipeline")
 
 
 if __name__ == "__main__":

@@ -65,21 +65,75 @@ def send_calendar_alert(page_name: str, num_rows: int, source_url: str = None):
     
     _send_email(subject, html)
 
-def send_cookie_alert():
-    subject = "⚠️ ACTION REQUIRED: Facebook Cookies Expired (Scraper Blocked)"
+def send_cookie_alert(expired_accounts: list[dict] = None, scraper_name: str = "Scraper"):
+    """Send an alert when Facebook cookies have expired.
     
-    html = """
+    Args:
+        expired_accounts: List of dicts with keys:
+            - account_label: Human-readable label (e.g. "Account 1 (Primary)")
+            - env_suffix: The env var suffix (e.g. "" for primary, "_1" for backup 1)
+        scraper_name: Which scraper triggered the alert (e.g. "Events Pipeline", "Calendar Scraper")
+    """
+    if not expired_accounts:
+        expired_accounts = [{"account_label": "All Accounts", "env_suffix": "unknown"}]
+    
+    num_expired = len(expired_accounts)
+    subject = f"⚠️ ACTION REQUIRED: {num_expired} Facebook Cookie(s) Expired — {scraper_name}"
+    
+    # Build account rows
+    account_rows = ""
+    for acc in expired_accounts:
+        suffix = acc.get("env_suffix", "")
+        label = acc.get("account_label", "Unknown")
+        
+        if suffix == "":
+            secrets_to_update = "<code>FB_C_USER</code>, <code>FB_XS</code>, <code>FB_DATR</code>, <code>FB_FR</code>, <code>FB_SB</code>"
+        else:
+            secrets_to_update = f"<code>FB_C_USER{suffix}</code>, <code>FB_XS{suffix}</code>, <code>FB_DATR{suffix}</code>, <code>FB_FR{suffix}</code>, <code>FB_SB{suffix}</code>"
+        
+        account_rows += f"""
+              <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 12px 8px; font-weight: bold; color: #333;">{label}</td>
+                <td style="padding: 12px 8px; font-family: monospace; font-size: 13px; color: #555;">{secrets_to_update}</td>
+              </tr>
+        """
+    
+    html = f"""
     <html>
-      <body style="font-family: Arial, sans-serif; color: #333;">
-        <h2 style="color: #d32f2f;">Scraper Blocked by Login Wall</h2>
-        <p>The automated calendar scraper was blocked by Facebook's login wall. This means the Facebook cookies in your GitHub Secrets have expired.</p>
-        <p><b>Action Required:</b></p>
-        <ol>
-          <li>Export fresh cookies using your browser extension.</li>
-          <li>Go to your GitHub Repository Settings > Secrets and variables > Actions.</li>
-          <li>Update <code>FB_XS</code> and <code>FB_SB</code> with the new values.</li>
-          <li>Manually re-run the workflow in the Actions tab.</li>
-        </ol>
+      <body style="font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f9f9f9;">
+        <div style="max-width: 700px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border-top: 5px solid #d32f2f;">
+          <h2 style="color: #d32f2f; margin-top: 0; font-size: 24px;">🚨 Scraper Blocked — Cookies Expired</h2>
+          <p style="font-size: 15px; line-height: 1.5; color: #555;">
+            The <b>{scraper_name}</b> was blocked by Facebook's login wall. The following account(s) need their cookies refreshed:
+          </p>
+          
+          <table border="0" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; margin-top: 15px; font-size: 14px;">
+            <thead>
+              <tr style="background-color: #fde8e8; text-align: left; border-bottom: 2px solid #d32f2f;">
+                <th style="font-weight: bold; color: #d32f2f; padding: 12px 8px;">Account</th>
+                <th style="font-weight: bold; color: #d32f2f; padding: 12px 8px;">GitHub Secrets to Update</th>
+              </tr>
+            </thead>
+            <tbody>
+              {account_rows}
+            </tbody>
+          </table>
+          
+          <div style="background-color: #fff8e1; border-left: 4px solid #f9a825; padding: 15px; margin-top: 20px; border-radius: 4px;">
+            <p style="margin: 0; font-size: 14px; color: #555;"><b>How to fix:</b></p>
+            <ol style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; color: #555; line-height: 1.8;">
+              <li>Log in to the Facebook account in your browser.</li>
+              <li>Export fresh cookies using your browser extension.</li>
+              <li>Go to <b>GitHub Repository Settings → Secrets and variables → Actions</b>.</li>
+              <li>Update the secrets listed above with the new cookie values.</li>
+              <li>Manually re-run the workflow in the Actions tab.</li>
+            </ol>
+          </div>
+          
+          <p style="font-size: 13px; color: #888; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px;">
+            <i>This alert was triggered by the {scraper_name}. The scraper was unable to continue and has stopped.</i>
+          </p>
+        </div>
       </body>
     </html>
     """
