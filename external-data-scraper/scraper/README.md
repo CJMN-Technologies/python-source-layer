@@ -1,10 +1,12 @@
 # Facebook Event Scraper
 
-This folder scrapes selected public Facebook pages for academic and LGU disruption signals near LRT-2 stations. It classifies relevant posts and saves them to Supabase.
+This folder scrapes selected public Facebook pages for academic and LGU disruption signals near LRT-2 stations. It classifies relevant posts using a two-stage pipeline (keyword pre-filter → Gemini LLM extraction), saves them to Supabase, and sends email alerts to the team.
+
+A separate **academic calendar scraper** detects full calendar releases, extracts dates into `.xlsx` spreadsheets, and emails them as attachments.
 
 ## Purpose
 
-The scraper looks for posts related to class suspensions, LGU advisories, weather disruptions, road closures, and similar external events that may affect LRT-2 demand or operations.
+The scraper looks for posts related to class suspensions, LGU advisories, weather disruptions, road closures, transport strikes, PAGASA weather bulletins, concert/arena events, and similar external events that may affect LRT-2 demand or operations.
 
 Target table:
 
@@ -12,49 +14,138 @@ Target table:
 external.academic_lgu_events
 ```
 
+Post categories:
+
+| Category | Meaning | Example Events |
+| --- | --- | --- |
+| `academic` | Class suspensions, resumptions, school holidays, exams, enrollment, graduation | "No classes tomorrow", "Midterm exams week" |
+| `lgu` | Government advisories, road closures, transport disruptions, concert/arena events | "Tigil Pasada", "Araneta concert", "MMDA road closure" |
+| `pagasa` | PAGASA weather bulletins relevant to NCR / LRT-2 catchment areas | "Orange rainfall warning over Metro Manila" |
+| `academic_calendar` | A post sharing a full academic calendar document | "A.Y. 2026-2027 Academic Calendar is now available" |
+
 ## Tech Stack
 
 | Technology | Purpose |
 | --- | --- |
-| Python | Main pipeline language |
+| Python 3.12 | Main pipeline language |
 | Playwright | Opens Facebook pages in headless Chromium |
-| BeautifulSoup | Parses rendered HTML |
+| BeautifulSoup | Parses rendered HTML for post extraction |
 | Requests | Downloads image assets for OCR |
-| Tesseract OCR | Extracts text from post images |
-| pytesseract | Python bridge to Tesseract |
-| Pillow | Loads images before OCR |
+| Google Gemini 2.0 Flash (`google-genai`) | OCR (extracts text from post images) and LLM classification (categorizes posts and extracts event details) |
+| Pillow + NumPy | Image loading and pre-processing before Gemini OCR |
+| Pydantic | Structured output schema for LLM classification responses |
+| pandas + openpyxl | Generates `.xlsx` academic calendar spreadsheets |
 | Supabase Python client | Writes classified events to Supabase |
 | python-dotenv | Loads local `.env` values |
 | APScheduler | Optional local long-running scheduler |
+| smtplib | Sends automated email alerts (Gmail SMTP with TLS) |
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `pipeline.py` | Main scraper pipeline and Supabase writer |
-| `fb_scraper.py` | Playwright scraping, caption expansion, post age parsing, OCR extraction |
-| `auth.py` | Builds Facebook cookies from environment variables |
-| `keywords.py` | Classifies post text as `academic`, `lgu`, or irrelevant |
-| `pages.json` | List of Facebook pages, stations, and scrape priorities |
-| `scheduler.py` | Local scheduler for high, medium, and low priority pages |
-| `Dockerfile` | Container image based on Playwright Python |
-| `requirements.txt` | Python dependencies |
+| `pipeline.py` | Main events scraper pipeline — scrapes pages, classifies posts, deduplicates, and saves to Supabase. Supports batch selection (A/B/C/D). |
+| `fb_scraper.py` | Core Playwright scraping engine — page loading, caption expansion, permalink extraction, post age parsing, Gemini OCR text extraction, resource blocking. |
+| `auth.py` | Builds Facebook cookie profiles from environment variables. Supports multiple accounts (primary + up to 9 backups). |
+| `keywords.py` | Pre-filter: classifies post text as `academic`, `lgu`, or irrelevant using keyword groups aligned to the friction weight table. Uses `.casefold()` for case-insensitive matching. |
+| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification. Returns `category`, `event_name`, and `event_date` via Pydantic schema. |
+| `calendar_scraper.py` | Academic calendar release detector — finds calendar posts, extracts dates via Gemini, generates Excel files per school, emails them as attachments, and upserts events to Supabase. |
+| `email_notifier.py` | Email alert system — sends pipeline summary emails (new events found), cookie expiration alerts, and academic calendar attachments via Gmail SMTP. |
+| `unicode_normalizer.py` | Converts decorative Unicode text (Mathematical Bold, Italic, Script, Double-Struck, Circled, Fullwidth) back to plain ASCII so keyword matching works regardless of Facebook font styling. |
+| `clean_and_renumber.py` | Database maintenance utility — deduplicates and re-numbers event IDs in `external.academic_lgu_events`. |
+| `debug_facebook_page.py` | Diagnostic tool — opens a Facebook page in Playwright and checks for login walls, keyword matches, and cookie validity. |
+| `pages.json` | List of Facebook pages to scrape, with station mappings, batch assignments (A/B/C/D), scrape priorities, and optional `max_scrolls` overrides. |
+| `processed_calendars.json` | Deduplication tracker for the calendar scraper — stores URLs of already-processed calendar posts. |
+| `scheduler.py` | Local scheduler for high, medium, and low priority page scraping. |
+| `Dockerfile` | Container image based on Playwright Python. |
+| `requirements.txt` | Python dependencies. |
+| `.env.example` | Template for local `.env` file with all required variables. |
+| `test_pipeline_logic.py` | Sandbox test — runs keyword and LLM classification against a simulated post. |
+| `test_email.py` | Tests the email alert system by sending a sample notification. |
+| `test_mbasic.py` | Diagnostic — tests mbasic.facebook.com scraping with Playwright. |
+
+## Two-Stage Classification Pipeline
+
+```text
+Facebook Post
+     │
+     ▼
+┌──────────────────────────┐
+│ 1. Keyword Pre-Filter    │  keywords.py — fast, no API cost
+│    (casefold + Unicode   │  Rejects posts with zero keyword hits
+│     normalization)       │  Returns: academic | lgu | None
+└──────────┬───────────────┘
+           │ (keyword hit)
+           ▼
+┌──────────────────────────┐
+│ 2. Gemini LLM Extraction │  llm_classifier.py — structured output
+│    (Gemini 2.0 Flash)    │  Returns: category, event_name, event_date
+└──────────┬───────────────┘
+           │
+           ▼
+┌──────────────────────────┐
+│ 3. Category Override     │  pipeline.py — page-type-aware
+│    PAGASA page → pagasa  │  Preserves academic_calendar from LLM
+│    LGU/PIO page → lgu    │  Falls back to keyword category if LLM fails
+└──────────┬───────────────┘
+           │
+           ▼
+     Save to Supabase
+```
 
 ## Environment Variables
 
-Create a local `.env` in this folder when running locally:
+Create a local `.env` in this folder when running locally (see `.env.example` for a complete template):
+
+**Required:**
 
 ```env
 SUPABASE_URL=
 SUPABASE_KEY=
 FB_C_USER=
 FB_XS=
+```
+
+**Facebook cookies (optional but recommended):**
+
+```env
 FB_DATR=
 FB_FR=
 FB_SB=
 ```
 
-`FB_C_USER` and `FB_XS` are the most important cookies. The other Facebook cookies are supported when available and can improve session reliability.
+`FB_C_USER` and `FB_XS` are the most important cookies. The other Facebook cookies improve session reliability when available.
+
+**Backup Facebook accounts** (up to 9 additional accounts for cookie rotation):
+
+```env
+FB_C_USER_1=
+FB_XS_1=
+FB_DATR_1=
+FB_FR_1=
+FB_SB_1=
+```
+
+**Gemini API keys** (supports comma-separated list and/or sequential variables):
+
+```env
+# Option 1: Comma-separated list
+GEMINI_API_KEY=key_1,key_2,key_3
+
+# Option 2: Sequential variables (loaded automatically)
+# GEMINI_API_KEY_2=key_2
+# GEMINI_API_KEY_3=key_3
+```
+
+Multiple keys enable automatic rotation when a key's quota is exhausted.
+
+**Email notifications:**
+
+```env
+SENDER_EMAIL=your_gmail@gmail.com
+SENDER_PASSWORD=your_gmail_app_password
+RECEIVER_EMAIL=recipient1@email.com,recipient2@email.com
+```
 
 Never commit `.env` or cookie values.
 
@@ -65,21 +156,7 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-Tesseract must also be installed on the machine.
-
-Windows default path used by the code:
-
-```text
-C:\Program Files\Tesseract-OCR\tesseract.exe
-```
-
-Linux default path used by the code:
-
-```text
-/usr/bin/tesseract
-```
-
-## Run Manually
+## Run the Events Pipeline
 
 From this folder:
 
@@ -87,17 +164,38 @@ From this folder:
 python pipeline.py
 ```
 
-Optional max post age in days:
+Run specific batches:
 
 ```bash
-python pipeline.py 7
+python pipeline.py A        # Run batch A only
+python pipeline.py A,B      # Run batches A and B
+python pipeline.py all      # Run all batches (default)
 ```
 
-The default max age is `7` days. Posts with a parsed age older than 7 days are skipped before keyword classification, while posts within the last 7 days are scanned by the keyword classifier.
+The default max post age is `7` days. Posts older than 7 days are skipped before classification.
+
+## Run the Calendar Scraper
+
+```bash
+python calendar_scraper.py
+```
+
+The calendar scraper scans university Facebook pages for academic calendar releases (A.Y. 2026-2027), extracts calendar dates via Gemini, generates an `.xlsx` file per school, emails the file to the team, and upserts the event to Supabase. Processed URLs are tracked in `processed_calendars.json` to avoid reprocessing.
+
+## Batch System
+
+Pages in `pages.json` are assigned to batches A, B, C, or D. This system splits scraping across two GitHub Actions runs per day to stay within the free-tier budget:
+
+| Time (PHT) | Batches | Approx Pages |
+| --- | --- | --- |
+| 6:00 AM | A, B | ~14 pages |
+| 3:00 PM | C, D | ~17 pages |
+
+Each page scan takes ~50 seconds (3 scrolls), totaling ~32 minutes/day (~960 min/month — well under the 2,000-minute free tier).
 
 ## Scheduling
 
-Local scheduler:
+**Local scheduler:**
 
 ```bash
 python scheduler.py
@@ -111,28 +209,58 @@ Schedule behavior:
 | Medium | 12:00 AM daily |
 | Low | Monday, Wednesday, Friday at 9:00 AM |
 
-GitHub Actions uses the root workflow:
+The scheduler runs an initial scrape immediately on startup.
 
-```text
-.github/workflows/scraper.yml
-```
+**GitHub Actions** uses the root workflows:
+
+| Workflow | File | Schedule |
+| --- | --- | --- |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 6:00 AM and 3:00 PM PHT daily (batched) |
+| Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT |
 
 ## How Data Is Saved
 
-For each relevant post, the pipeline saves:
+For each relevant post, the pipeline generates a sequential ID and saves:
 
-- generated event ID such as `EVNTS-ACAD-0001` or `EVNTS-LGU-0001`
-- station
-- source page name
-- source URL
-- post text
-- OCR image text when available
-- category
-- scrape timestamp
+| Field | Example | Description |
+| --- | --- | --- |
+| `id` | `external_acad_0001` | Auto-incremented per category (`external_acad_`, `external_lgu_`, `external_pagasa_`) |
+| `station` | `Katipunan` | LRT-2 station from `pages.json` |
+| `source_name` | `Ateneo de Manila University` | Facebook page display name |
+| `source_url` | `https://facebook.com/.../posts/...` | Permalink to the original post |
+| `post_text` | _(truncated to 2000 chars)_ | Caption text from the post |
+| `image_text` | _(truncated to 2000 chars)_ | OCR text extracted from post images via Gemini (null if no images) |
+| `category` | `academic` | Classification result (`academic`, `lgu`, `pagasa`, `academic_calendar`) |
+| `scraped_at` | `2026-07-08T14:00:00Z` | UTC timestamp of when the post was scraped |
+| `post_date` | `2026-07-06T14:00:00Z` | Estimated original post date (calculated from age) |
+
+## Deduplication
+
+The pipeline uses two deduplication strategies:
+
+1. **URL deduplication** — skips posts whose `source_url` already exists in the database.
+2. **Text similarity** — compares the first 100 characters of `post_text + image_text` against existing records. This catches the same content posted under different URL formats (e.g., `/posts/` vs `/photo/` vs `/permalink/`).
+
+## Special Filters
+
+- **PAGASA geographic filter** — only keeps PAGASA posts that mention NCR, Metro Manila, or LRT-2 catchment cities (Quezon City, Pasig, Marikina, Antipolo, etc.). Province-only bulletins are discarded.
+- **OLFU campus filter** — for Our Lady of Fatima University, only accepts posts that explicitly mention "Antipolo" (the campus near LRT-2).
+- **Cookie rotation** — when a Facebook account hits a login wall, the pipeline automatically tries the next available cookie profile. Expired accounts are tracked and reported via email.
+
+## Email Alerts
+
+The pipeline sends three types of email alerts:
+
+1. **Pipeline summary** — sent after each run with a table of all newly saved events.
+2. **Cookie expiration alert** — sent when one or more Facebook accounts hit a login wall.
+3. **Calendar attachment** — sent when the calendar scraper finds a new academic calendar release, with the generated `.xlsx` file attached.
 
 ## Maintenance Notes
 
-- Update `pages.json` when adding or removing source pages.
-- Update `keywords.py` when classification rules change.
-- Facebook markup can change, so scraper selectors may need maintenance.
-- OCR quality depends on image clarity and installed Tesseract language data.
+- Update `pages.json` when adding or removing source pages. Assign a batch letter (A/B/C/D).
+- Update `keywords.py` when classification rules change (keyword groups are aligned to `external.friction_weight`).
+- Update the LLM prompt in `llm_classifier.py` if new event types need to be recognized.
+- Facebook markup can change, so scraper selectors in `fb_scraper.py` may need maintenance.
+- Gemini API keys have daily free-tier quotas — rotate or add keys if quota errors increase.
+- OCR quality depends on image clarity and Gemini's ability to read the image.
+- Monitor `processed_calendars.json` to verify calendar deduplication is working correctly.

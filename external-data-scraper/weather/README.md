@@ -17,24 +17,26 @@ The pipeline is update-only. It does not insert new station or forecast rows. Re
 
 | Technology | Purpose |
 | --- | --- |
-| Python | Main pipeline language |
+| Python 3.12 | Main pipeline language |
 | Requests | Calls the Open-Meteo Forecast API |
 | Open-Meteo | Weather source for current conditions and daily forecasts |
 | Supabase Python client | Updates weather rows through Supabase |
 | python-dotenv | Loads local `.env` values |
-| APScheduler | Optional local hourly scheduler |
+| APScheduler | Optional local hourly scheduler (not included in `requirements.txt` — install separately if needed) |
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `pipeline.py` | Updates observations and forecasts |
-| `weather_fetch.py` | Calls Open-Meteo and normalizes API output |
-| `rainfall_classifier.py` | Converts rainfall values into rainfall levels |
-| `stations.json` | LRT-2 station names, station codes, latitude, and longitude |
-| `scheduler.py` | Local hourly scheduler |
-| `requirements.txt` | Python dependencies |
-| `test_weather.py` | Simple manual API test script |
+| `pipeline.py` | Updates observations and forecasts. Supports `--mode` and `--days` arguments. |
+| `weather_fetch.py` | Calls Open-Meteo and normalizes API output into station-level weather records. |
+| `rainfall_classifier.py` | Converts raw rainfall values (mm) into human-readable rainfall levels. |
+| `stations.json` | LRT-2 station names, station codes, latitude, and longitude for all 13 stations. |
+| `scheduler.py` | Local hourly scheduler — runs both observations and forecasts every hour at minute `0`. |
+| `requirements.txt` | Python dependencies (`requests`, `supabase`, `python-dotenv`). |
+| `test_weather.py` | Simple manual API test script for verifying Open-Meteo connectivity. |
+| `.env.example` | Template for local `.env` file. |
+| `.gitignore` | Ignores `.env`, `__pycache__/`, logs, etc. |
 
 ## Environment Variables
 
@@ -51,6 +53,12 @@ Never commit `.env`.
 
 ```bash
 pip install -r requirements.txt
+```
+
+If you want to use the local scheduler, also install APScheduler:
+
+```bash
+pip install apscheduler
 ```
 
 ## Run Manually
@@ -103,27 +111,24 @@ That means the pipeline found no matching row and intentionally did not create o
 
 ## Scheduling
 
-Local scheduler:
+**Local scheduler:**
 
 ```bash
 python scheduler.py
 ```
 
-The scheduler runs observations and forecasts hourly at minute `0`.
+The scheduler runs both observations and forecasts every hour at minute `0`. It performs an initial fetch immediately on startup.
 
-GitHub Actions uses root workflows:
+**GitHub Actions** uses a single workflow:
 
 ```text
-.github/workflows/weather-observations.yml
-.github/workflows/weather-forecasts.yml
+.github/workflows/weather_pipeline.yml
 ```
 
-Current workflow behavior:
-
-| Workflow | Schedule |
+| Schedule | Behavior |
 | --- | --- |
-| `weather-observations.yml` | Hourly |
-| `weather-forecasts.yml` | Daily at 06:00 Asia/Manila |
+| Daily at 00:00 UTC (8:00 AM PHT) | Runs the full pipeline (observations + forecasts) |
+| Manual dispatch | Can be triggered manually from the GitHub Actions UI |
 
 ## Required Seed Data
 
