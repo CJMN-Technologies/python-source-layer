@@ -40,7 +40,8 @@ from fb_scraper import (
     candidate_page_urls, click_see_more_buttons, normalize_playwright_cookies,
     get_ancestor, find_ancestor_with_link, clean_url, parse_age_days,
     is_truncated, fetch_full_post_text, get_post_header_text, is_video_post,
-    extract_text_from_image, clean_ocr_text, _block_unnecessary_resources
+    extract_text_from_image, clean_ocr_text, _block_unnecessary_resources,
+    is_valid_facebook_post_url
 )
 from unicode_normalizer import normalize_unicode_text
 
@@ -342,8 +343,11 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
                             continue
 
                         caption_text = el.get_text(separator=" ", strip=True)
-                        href = find_ancestor_with_link(el)
-                        post_url = clean_url(href) if href else (page.url if page.url else page_url)
+                        href = find_ancestor_with_link(el, expected_page_url=page_url)
+                        post_url = clean_url(href) if href else ""
+
+                        if not is_valid_facebook_post_url(post_url, page_url):
+                            continue
 
                         if post_url in processed:
                             continue

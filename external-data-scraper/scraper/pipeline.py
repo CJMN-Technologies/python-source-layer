@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 from auth import get_all_cookie_profiles_labeled
-from fb_scraper import scrape_page
+from fb_scraper import scrape_page, is_valid_facebook_post_url
 from keywords import classify_post
 from llm_classifier import classify_post_llm
 from email_notifier import send_pipeline_alert, send_cookie_alert
@@ -297,6 +297,11 @@ def run_pipeline(batch: str = "all"):
                 # Age unknown: use now as best estimate
                 post_date = now
 
+            source_url = post.get("source_url", "")
+            if not is_valid_facebook_post_url(source_url, page["url"]):
+                print(f"  Skipped unsafe/non-post source URL: {source_url or 'missing'}")
+                continue
+
             try:
                 ext_id = _next_ext_id_for_category(category)
 
@@ -304,7 +309,7 @@ def run_pipeline(batch: str = "all"):
                     "id":          ext_id,
                     "station":     page["station"],
                     "source_name": page["name"],
-                    "source_url":  post.get("source_url", page["url"]),
+                    "source_url":  source_url,
                     "post_text":   post["text"][:2000],
                     "image_text":  post["image_text"][:2000] if post["image_text"] else None,
                     "category":    category,
@@ -312,7 +317,7 @@ def run_pipeline(batch: str = "all"):
                     "post_date":   post_date.isoformat(),
                 }).execute()
 
-                existing_urls.add(post.get("source_url", page["url"]))
+                existing_urls.add(source_url)
                 existing_texts.add(post_prefix)
                 total_saved += 1
                 newly_saved_events.append({
@@ -321,7 +326,7 @@ def run_pipeline(batch: str = "all"):
                     "event_name":  event_name or "N/A",
                     "event_date":  event_date or "N/A",
                     "scraped_at":  now.isoformat(),
-                    "url":         post.get("source_url", page["url"])
+                    "url":         source_url
                 })
                 print(f"  >> Saved: [{category}] {event_name or post['text'][:60]}")
             except Exception as e:

@@ -76,8 +76,20 @@ OCR_KEYWORDS = [
 ]
 
 
-PERMALINK_PATTERN = re.compile(r"(/posts/|/permalink|story_fbid|/photos/|pfbid|fbid=|/share/)")
+PERMALINK_PATTERN = re.compile(r"(/posts/|/permalink|story_fbid=|/photos/|fbid=|/share/(p|photo)/)", re.I)
 VIDEO_PATTERN = re.compile(r"(/reel/|/videos/|/watch)")
+PERSONAL_OR_UNSAFE_FACEBOOK_PATHS = (
+    "/people/",
+    "/profile.php",
+    "/groups/",
+    "/friends/",
+    "/messages/",
+    "/notifications/",
+    "/login/",
+    "/reel/",
+    "/videos/",
+    "/watch",
+)
 
 # ---------------------------------------------------------------------------
 # RELEVANT KEYWORDS — Aligned to Friction Index (all stored as lowercase;
@@ -580,25 +592,77 @@ def is_video_post(el, levels: int = 4) -> bool:
     return False
 
 
-def find_ancestor_with_link(el, max_levels: int = 12):
+def find_ancestor_with_link(el, max_levels: int = 12, expected_page_url: str | None = None):
     current = el
     for _ in range(max_levels):
         if current is None:
             break
         for a in current.find_all("a", {"href": True}, limit=50):
             href = a["href"]
-            if PERMALINK_PATTERN.search(href):
+            cleaned_href = clean_url(href)
+            if is_valid_facebook_post_url(cleaned_href, expected_page_url):
                 return href
         current = current.parent
     return None
 
 
 def clean_url(href: str, prefer_mbasic: bool = False) -> str:
+    if not href:
+        return ""
     if href.startswith("/"):
         host = "mbasic.facebook.com" if prefer_mbasic else "www.facebook.com"
         href = f"https://{host}" + href
     # normalize and strip tracking params
     return href.split("&")[0].split("?__cft__")[0]
+
+
+def _facebook_page_slug(page_url: str | None) -> str | None:
+    if not page_url:
+        return None
+    parsed = urlparse(canonical_facebook_url(page_url))
+    path_parts = [part for part in parsed.path.casefold().split("/") if part]
+    if not path_parts or path_parts[0] == "profile.php":
+        return None
+    return path_parts[0]
+
+
+def is_valid_facebook_post_url(href: str, expected_page_url: str | None = None) -> bool:
+    """Accept only real Facebook post/photo/story URLs from trusted pages.
+
+    Personal profiles, people links, comment/reply links, videos, and reels are
+    intentionally rejected so they cannot be saved as source_url.
+    """
+    cleaned = clean_url(href)
+    if not cleaned:
+        return False
+
+    parsed = urlparse(cleaned)
+    host = parsed.netloc.casefold()
+    path = parsed.path.casefold()
+    query = parsed.query.casefold()
+    combined = f"{path}?{query}"
+
+    if "facebook.com" not in host:
+        return False
+
+    if "plugins/page.php" in combined:
+        return False
+
+    if any(blocked in path for blocked in PERSONAL_OR_UNSAFE_FACEBOOK_PATHS):
+        return False
+
+    if "comment_id=" in query or "reply_comment_id=" in query:
+        return False
+
+    if not PERMALINK_PATTERN.search(combined):
+        return False
+
+    expected_slug = _facebook_page_slug(expected_page_url)
+    path_parts = [part for part in path.split("/") if part]
+    if expected_slug and len(path_parts) >= 2 and path_parts[1] in {"posts", "photos"}:
+        return path_parts[0] == expected_slug
+
+    return True
 
 
 def canonical_facebook_url(page_url: str) -> str:
@@ -833,8 +897,11 @@ def scrape_page(
 
                         caption_text = el.get_text(separator=" ", strip=True)
 
-                        href = find_ancestor_with_link(el)
-                        post_url = clean_url(href) if href else (page.url if page.url else page_url)
+                        href = find_ancestor_with_link(el, expected_page_url=page_url)
+                        post_url = clean_url(href) if href else ""
+
+                        if not is_valid_facebook_post_url(post_url, page_url):
+                            continue
 
                         if existing_urls and post_url in existing_urls:
                             continue

@@ -60,6 +60,8 @@ The events scraper uses a **two-stage classification pipeline**:
 1. **Pre-filter (keywords)** — `keywords.py` checks if the post text contains any known disruption keywords using `.casefold()` matching. Posts without any keyword hit are discarded immediately to save LLM API quota.
 2. **LLM extraction (Gemini)** — `llm_classifier.py` passes pre-filtered posts to Gemini 2.0 Flash for structured classification. The LLM returns a `category`, `event_name`, and `event_date`. If all Gemini API keys are exhausted, the pipeline falls back to the keyword category.
 
+Before a post can be saved, the scraper validates `source_url` so only trusted Facebook post/photo links from the configured page are inserted. Personal profile links, `/people/` links, comment/reply links, videos, and reels are skipped to keep `external.academic_lgu_events` limited to official page announcements.
+
 Post categories:
 
 | Category | Meaning |

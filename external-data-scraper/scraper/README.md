@@ -227,7 +227,7 @@ For each relevant post, the pipeline generates a sequential ID and saves:
 | `id` | `external_acad_0001` | Auto-incremented per category (`external_acad_`, `external_lgu_`, `external_pagasa_`) |
 | `station` | `Katipunan` | LRT-2 station from `pages.json` |
 | `source_name` | `Ateneo de Manila University` | Facebook page display name |
-| `source_url` | `https://facebook.com/.../posts/...` | Permalink to the original post |
+| `source_url` | `https://facebook.com/.../posts/...` or `https://www.facebook.com/photo/?fbid=...` | Permalink to the original page post or photo |
 | `post_text` | _(truncated to 2000 chars)_ | Caption text from the post |
 | `image_text` | _(truncated to 2000 chars)_ | OCR text extracted from post images via Gemini (null if no images) |
 | `category` | `academic` | Classification result (`academic`, `lgu`, `pagasa`, `academic_calendar`) |
@@ -240,6 +240,24 @@ The pipeline uses two deduplication strategies:
 
 1. **URL deduplication** — skips posts whose `source_url` already exists in the database.
 2. **Text similarity** — compares the first 100 characters of `post_text + image_text` against existing records. This catches the same content posted under different URL formats (e.g., `/posts/` vs `/photo/` vs `/permalink/`).
+
+## Source URL Safety
+
+The scraper validates each Facebook `source_url` before it can be saved to Supabase or shown in email alerts. This prevents profile/comment/share-author links from being stored as official LGU or academic announcement links.
+
+Allowed URL formats:
+
+- Page post links such as `https://www.facebook.com/QCGov/posts/...`
+- Page post links with tracking such as `?ref=embed_page`
+- Photo permalinks such as `https://www.facebook.com/photo/?fbid=...`
+- Facebook share links for posts/photos such as `/share/p/...` or `/share/photo/...`
+
+Blocked URL formats:
+
+- Personal profile URLs such as `/people/...` and `/profile.php`
+- Comment or reply URLs containing `comment_id=` or `reply_comment_id=`
+- Reels, videos, and watch links because they are not reliably readable by the LLM/OCR flow
+- Mismatched page-slug post URLs, for example a personal `/janlexcasas/posts/...` URL while scraping the configured `PasigPIO` page
 
 ## Special Filters
 
