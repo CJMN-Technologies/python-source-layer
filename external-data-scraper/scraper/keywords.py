@@ -294,6 +294,19 @@ ACADEMIC_CALENDAR_KEYWORDS = [
     "holiday break",
     "walang klase bukas",
     "huling araw ng klase",
+    # UST / School specific events & advisories
+    "paskuhan",
+    "baccalaureate",
+    "solemn investiture",
+    "tiger hunt",
+    "medical clearance",
+    "onsite transactions",
+    "office transactions",
+    "evm",
+    "remote learning",
+    "advisory",
+    "announcement",
+    "notice",
 ]
 
 # ---------------------------------------------------------------------------

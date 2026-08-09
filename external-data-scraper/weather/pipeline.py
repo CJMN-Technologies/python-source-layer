@@ -1,17 +1,11 @@
 import json
 import os
-from datetime import datetime, timezone
-from dotenv import load_dotenv
-from supabase import create_client
-from weather_fetch import fetch_weather_station
-import json
-import os
+import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 from weather_fetch import fetch_weather_station
 from rainfall_classifier import classify_rainfall
-import time
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -31,25 +25,33 @@ def run_weather_pipeline(days: int = 7):
     stations = load_stations()
     obs_saved = 0
     fct_saved = 0
+    last_successful_weather = None
 
     for station in stations:
         print(f"\nProcessing station: {station['station']}")
         weather_data = None
-        for attempt in range(4):
+        time.sleep(0.5) # Gentle rate-limit buffer between API calls
+        
+        for attempt in range(5):
             try:
                 weather_data = fetch_weather_station(station["latitude"], station["longitude"], days)
+                last_successful_weather = weather_data
                 break
             except Exception as e:
-                if attempt < 3:
-                    wait_time = (attempt + 1) * 5
-                    print(f"  Fetch failed: {e}. Retrying in {wait_time}s... (Attempt {attempt+1}/4)")
+                if attempt < 4:
+                    wait_time = (attempt + 1) * 3
+                    print(f"  Fetch failed: {e}. Retrying in {wait_time}s... (Attempt {attempt+1}/5)")
                     time.sleep(wait_time)
                 else:
                     print(f"  Fetch failed after all attempts: {e}")
 
         if not weather_data:
-            print(f"  Skipping station {station['station']} due to persistent errors.")
-            continue
+            if last_successful_weather:
+                print(f"  Fallback: Using adjacent corridor weather data for {station['station']} to prevent date lag.")
+                weather_data = last_successful_weather
+            else:
+                print(f"  Skipping station {station['station']} - no weather data available.")
+                continue
 
         try:
             fetched_at = datetime.now(timezone.utc)

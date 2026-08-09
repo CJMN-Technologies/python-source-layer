@@ -797,8 +797,8 @@ def scrape_page(
     cookies: list,
     existing_urls: set = None,
     max_scrolls: int = 8,
-    max_age_days: float = 7.0,
-    max_ocr_per_page: int = 10,
+    max_age_days: float = 14.0,
+    max_ocr_per_page: int = 25,
 ) -> list[dict]:
     """
     Scrape a single Facebook page for relevant events.
@@ -942,10 +942,9 @@ def scrape_page(
                             if caption_text.lower().endswith(suffix):
                                 caption_text = caption_text[: -len(suffix)].rstrip(". ").strip()
 
-                        # --- OCR: Only run if caption alone didn't pass the keyword filter
-                        # AND the per-page OCR budget hasn't been exhausted ---
+                        # --- OCR: Run on post images if OCR budget is available ---
                         image_text = ""
-                        if not caption_passes and page_ocr_count < max_ocr_per_page:
+                        if page_ocr_count < max_ocr_per_page:
                             # Caption alone didn't match — check images for additional text
                             image_container = get_ancestor(el, 3)
                             if image_container:

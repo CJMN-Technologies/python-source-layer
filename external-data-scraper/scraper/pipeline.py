@@ -19,10 +19,10 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # Hard ceiling: never ingest posts older than this many days from now
-MAX_AGE_DAYS = 7.0
+MAX_AGE_DAYS = 14.0
 
 # Default number of scrolls per page (can be overridden per page in pages.json)
-DEFAULT_MAX_SCROLLS = 3
+DEFAULT_MAX_SCROLLS = 6
 
 
 def _next_ext_id_for_category(category: str) -> str:
@@ -253,11 +253,13 @@ def run_pipeline(batch: str = "all"):
                 print("  Skipped duplicate text (already in DB under different URL).")
                 continue
 
-            # OLFU filter: only accept posts that mention the Antipolo campus
+            # OLFU filter: accept posts mentioning Antipolo campus OR systemwide/all campus suspensions
             if "fatima" in page["url"].casefold() or "fatima" in page["name"].casefold():
                 combined_lower = combined.casefold()
-                if "antipolo" not in combined_lower:
-                    print("  Skipped OLFU post: Does not mention Antipolo campus.")
+                is_antipolo = "antipolo" in combined_lower
+                is_systemwide = any(k in combined_lower for k in ["all campuses", "all levels", "systemwide", "entire university", "walang pasok", "class suspension", "suspended", "advisory", "notice"])
+                if not is_antipolo and not is_systemwide:
+                    print("  Skipped OLFU post: Does not apply to Antipolo campus.")
                     continue
 
             # PAGASA geographic filter — only keep posts about NCR / LRT-2 areas
@@ -271,8 +273,8 @@ def run_pipeline(batch: str = "all"):
             if pre_category is None:
                 continue
 
-            # SMART EXTRACTION with LLM
-            llm_res = classify_post_llm(combined)
+            # SMART EXTRACTION with LLM (evaluates Caption + Image OCR Text together)
+            llm_res = classify_post_llm(post.get("text", ""), post.get("image_text", ""))
 
             # Determine final category (preserves academic_calendar, respects page type)
             category = _determine_category(llm_res, page)
@@ -313,6 +315,8 @@ def run_pipeline(batch: str = "all"):
                     "post_text":   post["text"][:2000],
                     "image_text":  post["image_text"][:2000] if post["image_text"] else None,
                     "category":    category,
+                    "event_name":  event_name[:500] if event_name else None,
+                    "event_date":  event_date[:100] if event_date else None,
                     "scraped_at":  now.isoformat(),
                     "post_date":   post_date.isoformat(),
                 }).execute()
