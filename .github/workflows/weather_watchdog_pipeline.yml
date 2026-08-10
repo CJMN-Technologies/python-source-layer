@@ -1,20 +1,20 @@
-name: Weather Pipeline
+name: Weather Watchdog Backup Pipeline
 
 on:
   schedule:
-    # Runs hourly during LRT-2 operating hours: 5:00 AM to 10:00 PM PHT (21:00-14:00 UTC)
-    - cron: '0 21-23,0-14 * * *'
+    # Runs at :30 past every hour during LRT-2 operating hours (5:30 AM to 10:30 PM PHT / 21:30-14:30 UTC)
+    - cron: '30 21-23,0-14 * * *'
   workflow_dispatch: # Allows manual trigger from the GitHub UI
 
 jobs:
-  scrape-weather:
+  watchdog-weather:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,10 +26,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r external-data-scraper/weather/requirements.txt
 
-      - name: Run Weather Pipeline
+      - name: Run Weather Watchdog
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         working-directory: ./external-data-scraper/weather
         run: |
-          python pipeline.py
+          python watchdog_pipeline.py
