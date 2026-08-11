@@ -63,28 +63,7 @@ def _next_ext_id_for_category(category: str) -> str:
         pass
     return f"{base}_0001"
 
-# ---------------------------------------------------------------------------
-# PAGASA geographic relevance filter
-# Only keep PAGASA posts that mention NCR or LRT-2 station catchment cities.
-# Discard province-only bulletins (Zambales, Bataan, Visayas, etc.)
-# ---------------------------------------------------------------------------
-_PAGASA_RELEVANT_AREAS = [
-    # Metro Manila (NCR)
-    "metro manila", "ncr", "national capital region",
-    "manila", "quezon city", "san juan", "pasig",
-    "marikina", "mandaluyong", "makati", "pasay",
-    "caloocan", "malabon", "navotas", "valenzuela",
-    "las pinas", "muntinlupa", "paranaque", "taguig",
-    # LRT-2 extension catchment
-    "antipolo", "cainta", "rizal",
-    # Broad NCR mentions
-    "metro", "mmda",
-]
-
-def _is_pagasa_relevant(text: str) -> bool:
-    """Return True if a PAGASA post mentions NCR or LRT-2 catchment areas."""
-    lowered = text.casefold()
-    return any(area in lowered for area in _PAGASA_RELEVANT_AREAS)
+# PAGASA logic removed (historically kept in DB, no longer scraped)
 
 
 def load_pages(batch: str = "all") -> list[dict]:
@@ -137,6 +116,11 @@ def _determine_category(llm_res: dict, page: dict) -> str | None:
         or "lgu" in page_name_lower
     ):
         return "lgu"
+
+    # Prevent universities/academic pages from being wrongly classified as LGU
+    is_academic_page = any(kw in page_name_lower for kw in ["university", "college", "school", "institute", "student council", "sanggunian", "student organization", "konseho", "mag-aaral"])
+    if is_academic_page and llm_category == "lgu":
+        return "acad"
 
     # For academic/student council pages, trust the LLM
     return llm_category if llm_category else "acad"
@@ -262,11 +246,7 @@ def run_pipeline(batch: str = "all"):
                     print("  Skipped OLFU post: Does not apply to Antipolo campus.")
                     continue
 
-            # PAGASA geographic filter — only keep posts about NCR / LRT-2 areas
-            if "pagasa" in page["name"].casefold():
-                if not _is_pagasa_relevant(combined):
-                    print(f"  Skipped PAGASA post: not relevant to NCR/LRT-2 area.")
-                    continue
+            # (PAGASA filtering logic removed)
 
             # PRE-FILTER with keywords (case-insensitive via classify_post using .casefold())
             pre_category = classify_post(combined)

@@ -3,34 +3,31 @@ name: LRT-2 Events Scraper Pipeline
 # ---------------------------------------------------------------------------
 # Schedule Strategy (free tier optimized & daily scraping):
 #
-# We split the Facebook pages into 4 batches (A, B, C, D).
-# To ensure all pages are scanned every single day, we run:
-#
-#   Morning Run   (6:00 AM PHT / 22:00 UTC): Batches A and B (14 pages total)
-#   Afternoon Run (3:00 PM PHT / 07:00 UTC): Batches C and D (17 pages total)
-#
-# By reducing the DEFAULT_MAX_SCROLLS to 3 and using conditional page
-# loading fallbacks, each page scan is optimized to ~50 seconds.
-# This runs all pages daily in ~32 minutes total, consuming ~960 minutes
-# per month, which is well under the 2,000-minute free tier budget.
+# We run Eastbound and Westbound concurrently using a matrix strategy.
+# Runs 3 times a day:
+#   6:00 AM PHT (22:00 UTC)
+#   12:00 PM PHT (04:00 UTC)
+#   5:00 PM PHT (09:00 UTC)
 # ---------------------------------------------------------------------------
 
 on:
   schedule:
-    # Morning run — 6:00 AM PHT = 22:00 UTC (day before in UTC)
     - cron: '0 22 * * *'
-    # Afternoon run — 3:00 PM PHT = 07:00 UTC
-    - cron: '0 7 * * *'
+    - cron: '0 4 * * *'
+    - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:
       batch:
-        description: 'Batch to run (A, B, C, D, or all)'
+        description: 'Batch to run (Eastbound, Westbound, or all)'
         required: false
         default: 'all'
 
 jobs:
   scrape-events:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        batch: [Eastbound, Westbound]
 
     steps:
       - name: Checkout Repository
@@ -53,30 +50,19 @@ jobs:
       - name: Determine Batch
         id: batch_select
         run: |
-          # If manually triggered with a specific batch, use it
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BATCH="${{ github.event.inputs.batch }}"
-            echo "batch=${BATCH}" >> $GITHUB_OUTPUT
-            echo "Manually triggered: Batch ${BATCH}"
-            exit 0
+            if [ "${{ github.event.inputs.batch }}" != "all" ]; then
+              if [ "${{ github.event.inputs.batch }}" != "${{ matrix.batch }}" ]; then
+                echo "skip=true" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+            fi
           fi
-
-          # Determine which batches to run based on the hour of trigger (all batches daily)
-          HOUR=$(date -u +%H)
-          HOUR_NUM=$((10#$HOUR))
-
-          if [ "$HOUR_NUM" -ge 15 ] || [ "$HOUR_NUM" -le 2 ]; then
-            # Morning run (6 AM PHT / 22:00 UTC) -> Run Batches A and B
-            BATCH="A,B"
-          else
-            # Afternoon run (3 PM PHT / 07:00 UTC) -> Run Batches C and D
-            BATCH="C,D"
-          fi
-
-          echo "batch=${BATCH}" >> $GITHUB_OUTPUT
-          echo "Scheduled run: Hour ${HOUR} UTC → Batches ${BATCH}"
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "batch=${{ matrix.batch }}" >> $GITHUB_OUTPUT
 
       - name: Run Events Pipeline
+        if: steps.batch_select.outputs.skip == 'false'
         env:
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}

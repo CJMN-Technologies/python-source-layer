@@ -459,7 +459,7 @@ def extract_text_from_image(image_url: str) -> str:
         )
 
         # Try cheapest model first to conserve quota
-        models_to_try = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+        models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash"]
         gemini_response = None
         
         # Loop through each API key, trying all models on it

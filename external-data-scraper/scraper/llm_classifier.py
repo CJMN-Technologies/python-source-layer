@@ -92,7 +92,7 @@ CATEGORY null (reject — not relevant):
         return {"category": None, "event_name": None, "event_date": None}
 
     # Model fallback: start with cheapest to conserve quota
-    models_to_try = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+    models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash"]
 
     for attempt in range(3):  # up to 3 retry rounds (handles 503 spikes)
         for api_key in keys:
