@@ -291,17 +291,20 @@ def run_pipeline(batch: str = "all"):
                 ext_id = _next_ext_id_for_category(category)
 
                 supabase.schema("external").table("academic_lgu_events").upsert({
-                    "id":          ext_id,
-                    "station":     page["station"],
-                    "source_name": page["name"],
-                    "source_url":  source_url,
-                    "post_text":   post["text"][:2000],
-                    "image_text":  post["image_text"][:2000] if post["image_text"] else None,
-                    "category":    category,
-                    "event_name":  event_name[:500] if event_name else None,
-                    "event_date":  event_date[:100] if event_date else None,
-                    "scraped_at":  now.isoformat(),
-                    "post_date":   post_date.isoformat(),
+                    "id":                       ext_id,
+                    "station":                  page["station"],
+                    "source_name":              page["name"],
+                    "source_url":               source_url,
+                    "post_text":                post["text"][:2000],
+                    "image_text":               post["image_text"][:2000] if post["image_text"] else None,
+                    "category":                 category,
+                    "event_name":               event_name[:500] if event_name else None,
+                    "event_date":               event_date[:100] if event_date else None,
+                    "event_code":               llm_res.get("event_code"),
+                    "is_cancellation":          bool(llm_res.get("is_cancellation")),
+                    "cancellation_target_code": llm_res.get("cancellation_target_code"),
+                    "scraped_at":               now.isoformat(),
+                    "post_date":                post_date.isoformat(),
                 }).execute()
 
                 existing_urls.add(source_url)
