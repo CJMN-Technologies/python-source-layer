@@ -29,7 +29,7 @@ def _next_ext_id_for_category(category: str) -> str:
     """Return next external_<category>_<NNNN> id by querying Supabase for the max existing id."""
     category_key = category.lower()
     if category_key in ("academic", "academic_calendar", "acad"):
-        category_code = "acad"
+        category_code = "academic"
     elif category_key == "lgu":
         category_code = "lgu"
     elif category_key == "pagasa":
@@ -92,7 +92,7 @@ def _determine_category(llm_res: dict, page: dict) -> str | None:
     1. If LLM returns 'academic_calendar', preserve it (do NOT override).
     2. If page is PAGASA, force 'pagasa'.
     3. If page is an LGU/government/PIO, force 'lgu'.
-    4. Otherwise trust the LLM category.
+    4. Otherwise trust the LLM category ('academic').
     """
     llm_category = llm_res.get("category")
 
@@ -120,10 +120,13 @@ def _determine_category(llm_res: dict, page: dict) -> str | None:
     # Prevent universities/academic pages from being wrongly classified as LGU
     is_academic_page = any(kw in page_name_lower for kw in ["university", "college", "school", "institute", "student council", "sanggunian", "student organization", "konseho", "mag-aaral"])
     if is_academic_page and llm_category == "lgu":
-        return "acad"
+        return "academic"
 
-    # For academic/student council pages, trust the LLM
-    return llm_category if llm_category else "acad"
+    # For academic/student council pages, standardize category to 'academic'
+    if llm_category in ("academic", "acad"):
+        return "academic"
+
+    return llm_category if llm_category else "academic"
 
 
 def run_pipeline(batch: str = "all"):
