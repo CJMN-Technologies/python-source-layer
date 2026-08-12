@@ -215,7 +215,7 @@ The scheduler runs an initial scrape immediately on startup.
 
 | Workflow | File | Schedule |
 | --- | --- | --- |
-| Events Pipeline | `.github/workflows/events_pipeline.yml` | 6:00 AM and 3:00 PM PHT daily (batched) |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 6:00 AM, 12:00 PM, and 5:00 PM / 6:00 PM PHT daily (3 time windows) |
 | Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT |
 
 ## How Data Is Saved
