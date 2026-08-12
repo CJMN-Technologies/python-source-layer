@@ -5,16 +5,16 @@ name: LRT-2 Events Scraper Pipeline
 #
 # We run Eastbound and Westbound concurrently using a matrix strategy.
 # Runs 3 times a day:
-#   6:00 AM PHT (22:00 UTC)
-#   12:00 PM PHT (04:00 UTC)
-#   5:00 PM PHT (09:00 UTC)
+#   4:00 AM PHT (20:00 UTC)
+#   11:00 AM PHT (03:00 UTC)
+#   4:00 PM PHT (08:00 UTC)
 # ---------------------------------------------------------------------------
 
 on:
   schedule:
-    - cron: '0 22 * * *'
-    - cron: '0 4 * * *'
-    - cron: '0 9 * * *'
+    - cron: '0 20 * * *'
+    - cron: '0 3 * * *'
+    - cron: '0 8 * * *'
   workflow_dispatch:
     inputs:
       batch:

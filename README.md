@@ -107,7 +107,7 @@ The active workflow files are in `.github/workflows/` at the repository root:
 
 | Workflow | File | Schedule | Purpose |
 | --- | --- | --- | --- |
-| Events Pipeline | `events_pipeline.yml` | 6:00 AM, 12:00 PM, and 5:00 PM / 6:00 PM PHT daily (3 time windows) | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
+| Events Pipeline | `events_pipeline.yml` | 4:00 AM, 11:00 AM, and 4:00 PM PHT daily (3 time windows) | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
 | Calendar Scraper | `calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | Scrapes for academic calendar releases, generates `.xlsx` files, and auto-commits them to the repo. |
 | Weather Pipeline | `weather_pipeline.yml` | Daily at 8:00 AM PHT (00:00 UTC) | Updates current weather observations and 7-day forecasts for all LRT-2 stations. |
 
