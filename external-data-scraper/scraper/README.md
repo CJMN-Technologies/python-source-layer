@@ -48,7 +48,7 @@ Post categories:
 | `fb_scraper.py` | Core Playwright scraping engine — page loading, caption expansion, permalink extraction, post age parsing, Gemini OCR text extraction, resource blocking. |
 | `auth.py` | Builds Facebook cookie profiles from environment variables. Supports multiple accounts (primary + up to 9 backups). |
 | `keywords.py` | Pre-filter: classifies post text as `academic`, `lgu`, or irrelevant using keyword groups aligned to the friction weight table. Uses `.casefold()` for case-insensitive matching. |
-| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification. Returns `category`, `event_name`, and `event_date` via Pydantic schema. |
+| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification with injected current reference date/year (`Today is August 13, 2026`) to prevent misdating events without explicit years to past years (e.g. 2024). Returns `category`, `event_name`, `event_date`, `event_code`, `is_cancellation`, and `cancellation_target_code` via Pydantic schema. |
 | `calendar_scraper.py` | Academic calendar release detector — finds calendar posts, extracts dates via Gemini, generates Excel files per school, emails them as attachments, and upserts events to Supabase. |
 | `email_notifier.py` | Email alert system — sends pipeline summary emails (new events found), cookie expiration alerts, and academic calendar attachments via Gmail SMTP. |
 | `unicode_normalizer.py` | Converts decorative Unicode text (Mathematical Bold, Italic, Script, Double-Struck, Circled, Fullwidth) back to plain ASCII so keyword matching works regardless of Facebook font styling. |
@@ -64,7 +64,7 @@ Post categories:
 | `test_email.py` | Tests the email alert system by sending a sample notification. |
 | `test_mbasic.py` | Diagnostic — tests mbasic.facebook.com scraping with Playwright. |
 
-## Two-Stage Classification Pipeline
+## Two-Stage Classification Pipeline & Truncation Resilience
 
 ```text
 Facebook Post
@@ -78,19 +78,35 @@ Facebook Post
            │ (keyword hit)
            ▼
 ┌──────────────────────────┐
-│ 2. Gemini LLM Extraction │  llm_classifier.py — structured output
-│    (Gemini 2.0 Flash)    │  Returns: category, event_name, event_date
+│ 2. Truncation Resolution │  fb_scraper.py — expands 'See More', '...', '\u2026'
+│    & Full Text Extraction│  Navigates permalinks directly for truncated posts
+│                          │  Increases storage limit to 5,000 chars
 └──────────┬───────────────┘
            │
            ▼
 ┌──────────────────────────┐
-│ 3. Category Override     │  pipeline.py — page-type-aware
+│ 3. Gemini LLM Extraction │  llm_classifier.py — structured output with prompt resilience
+│    (Gemini 2.0 Flash)    │  Injects post title/source name context; extracts 5-8 word summary
+└──────────┬───────────────┘
+           │
+           ▼
+┌──────────────────────────┐
+│ 4. Category Override     │  pipeline.py — page-type-aware
 │    PAGASA page → pagasa  │  Preserves academic_calendar from LLM
 │    LGU/PIO page → lgu    │  Falls back to keyword category if LLM fails
 └──────────┬───────────────┘
            │
            ▼
-     Save to Supabase
+     Save to Supabase (`external.academic_lgu_events`)
+           │
+           ▼
+┌──────────────────────────┐
+│ 5. Database Trigger      │  external.sync_academic_lgu_to_events_consolidated()
+│    Classification Sync   │  Evaluates event_name + source_name if caption cut off
+└──────────┬───────────────┘
+           │
+           ▼
+     Live Event Feed (`Analytics.descriptive_live_event_feed`)
 ```
 
 ## Environment Variables

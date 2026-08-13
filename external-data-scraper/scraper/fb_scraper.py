@@ -404,155 +404,34 @@ def clean_ocr_text(text: str) -> str:
     return " ".join(lines)
 
 
+def strip_social_boilerplate(text: str) -> str:
+    """Strip social media reaction counts, share counters, and trailing UI text."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"All reactions:.*", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\b\d+\s+reactions?\b.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\b\d+\s+shares?\b.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return cleaned.strip()
+
+
 def clean_caption_text(text: str) -> str:
-    """Strip emojis and normalize whitespace from post caption text."""
+    """Strip emojis, social boilerplate, and normalize whitespace from post caption text."""
+    text = strip_social_boilerplate(text)
     text = strip_emojis(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def crop_footer(image: Image.Image, footer_fraction: float = 0.12) -> Image.Image:
-    """Crop the bottom portion of an image to remove social-media footers/logos."""
-    width, height = image.size
-    crop_height = int(height * (1 - footer_fraction))
-    return image.crop((0, 0, width, crop_height))
-
-
-def short_url_for_log(image_url: str) -> str:
-    parsed = urlparse(image_url)
-    filename = parsed.path.rsplit("/", 1)[-1]
-    return f"{parsed.netloc}/{filename}" if filename else parsed.netloc
-
-
-def extract_text_from_image(image_url: str) -> str:
-    """Download an image and extract text using Google's Gemini Vision API."""
-    if image_url in OCR_CACHE:
-        return OCR_CACHE[image_url]
-
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        }
-        response = requests.get(image_url, headers=headers, timeout=(5, 20))
-        response.raise_for_status()
-        image = Image.open(io.BytesIO(response.content))
-        if min(image.size) < 150 or max(image.size) < 250:
-            OCR_CACHE[image_url] = ""
-            return ""
-
-        keys = _get_gemini_keys()
-        if not keys:
-            print("  OCR skipped: No Gemini API keys found in environment.")
-            return ""
-
-        prompt = (
-            "You are an OCR and information extraction assistant. "
-            "Read all the text visible in the attached image. "
-            "Provide ONLY the extracted main announcement or advisory text. "
-            "Follow these rules:\n"
-            "1. Ignore social media footers, logos, icons, links, usernames, and contact information at the bottom.\n"
-            "2. Ignore headers or logos that only contain the organization's name unless it is part of the announcement text itself.\n"
-            "3. Preserve paragraph breaks and spacing where appropriate.\n"
-            "4. Strip out any standalone decorative emojis or symbols.\n"
-            "5. Do NOT add any extra commentary or introductory text (like 'Here is the text:'). Just output the transcribed text."
-        )
-
-        # Try cheapest model first to conserve quota
-        models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash"]
-        gemini_response = None
-        
-        # Loop through each API key, trying all models on it
-        for key_idx, api_key in enumerate(keys, start=1):
-            try:
-                client = genai.Client(api_key=api_key)
-            except Exception as e:
-                print(f"  Failed to initialize Gemini client for Key #{key_idx}: {e}")
-                continue
-                
-            for model_name in models_to_try:
-                try:
-                    gemini_response = client.models.generate_content(
-                        model=model_name,
-                        contents=[prompt, image]
-                    )
-                    break
-                except Exception as e:
-                    if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
-                        print(f"  {model_name} quota exhausted on API Key #{key_idx}. Trying next model/key...")
-                        continue
-                    else:
-                        raise e
-            if gemini_response is not None:
-                break
-
-        if gemini_response is None:
-            raise RuntimeError("All configured Gemini API keys and models returned RESOURCE_EXHAUSTED.")
-
-        raw_text = gemini_response.text or ""
-        result = clean_ocr_text(raw_text)
-        OCR_CACHE[image_url] = result
-        return result
-    except requests.RequestException as e:
-        print(f"  OCR fetch skipped ({short_url_for_log(image_url)}): {e.__class__.__name__}")
-        OCR_CACHE[image_url] = ""
-        return ""
-    except Exception as e:
-        print(f"  OCR skipped ({short_url_for_log(image_url)}): {e.__class__.__name__}")
-        OCR_CACHE[image_url] = ""
-        return ""
-
-
-def is_relevant_event(text: str, image_text: str = "") -> bool:
-    """
-    Return True if the combined text likely refers to a relevant LRT ridership-
-    affecting event: class suspensions, LGU advisories, transport disruptions,
-    arena/concert events, or academic calendar events.
-
-    Uses .casefold() for case-insensitive matching — handles ALL CAPS, Title
-    Case, lowercase, and mixed-case Filipino Facebook posts equally.
-    """
-    combined = (text or "") + " " + (image_text or "")
-    if not combined.strip():
-        return False
-
-    # Normalize decorative Unicode fonts (bold, italic, script, etc.) to plain ASCII
-    combined = normalize_unicode_text(combined)
-    lowered = combined.casefold()
-
-    # Reject generic calendar-title posts (not actionable events)
-    calendar_titles = [
-        "academic calendar",
-        "school calendar",
-        "collegiate calendar",
-        "university calendar",
-    ]
-    # Only reject if it's ONLY a calendar title post (no suspension/event context)
-    if any(kw in lowered for kw in calendar_titles):
-        # Still allow if it also contains actionable keywords
-        has_action = any(kw.casefold() in lowered for kw in [
-            "no classes", "suspended", "walang pasok", "holiday", "holiday break"
-        ])
-        if not has_action:
-            return False
-
-    # Accept immediately on any strong keyword match (case-insensitive)
-    for kw in STRONG_RELEVANT_KEYWORDS:
-        if kw.casefold() in lowered:
-            return True
-
-    # For posts with a suspension/event signal word, check for context
-    if SUSPENSION_PATTERN.search(lowered):
-        for kw in SUSPENSION_CONTEXT_KEYWORDS + GENERAL_RELEVANT_KEYWORDS:
-            if kw.casefold() in lowered:
-                return True
-
-    return False
-
-
 def is_truncated(text: str) -> bool:
-    t = text.strip().lower()
-    return t.endswith("see more") or t.endswith("tumingin pa")
+    """Check if caption text ends abruptly or contains Facebook 'See More' / ellipsis truncation."""
+    if not text:
+        return False
+    t = text.strip().casefold()
+    truncation_patterns = [
+        "see more", "tumingin pa", "read more", "see less",
+        "...", "\u2026", "at al…", "al…", "see more…", "tumingin pa…"
+    ]
+    return any(t.endswith(p) or f" {p}" in t for p in truncation_patterns)
 
 
 def get_ancestor(el, levels: int):
