@@ -422,6 +422,53 @@ def clean_caption_text(text: str) -> str:
     return text
 
 
+def is_relevant_event(text: str, image_text: str = "") -> bool:
+    """
+    Return True if the combined text likely refers to a relevant LRT ridership-
+    affecting event: class suspensions, LGU advisories, transport disruptions,
+    arena/concert events, or academic calendar events.
+
+    Uses .casefold() for case-insensitive matching — handles ALL CAPS, Title
+    Case, lowercase, and mixed-case Filipino Facebook posts equally.
+    """
+    combined = (text or "") + " " + (image_text or "")
+    if not combined.strip():
+        return False
+
+    # Normalize decorative Unicode fonts (bold, italic, script, etc.) to plain ASCII
+    combined = normalize_unicode_text(combined)
+    lowered = combined.casefold()
+
+    # Reject generic calendar-title posts (not actionable events)
+    calendar_titles = [
+        "academic calendar",
+        "school calendar",
+        "collegiate calendar",
+        "university calendar",
+    ]
+    # Only reject if it's ONLY a calendar title post (no suspension/event context)
+    if any(kw in lowered for kw in calendar_titles):
+        # Still allow if it also contains actionable keywords
+        has_action = any(kw.casefold() in lowered for kw in [
+            "no classes", "suspended", "walang pasok", "holiday", "holiday break"
+        ])
+        if not has_action:
+            return False
+
+    # Accept immediately on any strong keyword match (case-insensitive)
+    for kw in STRONG_RELEVANT_KEYWORDS:
+        if kw.casefold() in lowered:
+            return True
+
+    # For posts with a suspension/event signal word, check for context
+    if SUSPENSION_PATTERN.search(lowered):
+        for kw in SUSPENSION_CONTEXT_KEYWORDS + GENERAL_RELEVANT_KEYWORDS:
+            if kw.casefold() in lowered:
+                return True
+
+    return False
+
+
 def is_truncated(text: str) -> bool:
     """Check if caption text ends abruptly or contains Facebook 'See More' / ellipsis truncation."""
     if not text:
