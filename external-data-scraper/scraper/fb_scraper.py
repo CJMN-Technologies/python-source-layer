@@ -290,6 +290,23 @@ def weekday_age_days(match) -> float:
     return float((today - weekday) % 7)
 
 
+MONTH_MAP = {
+    "january": 1, "enero": 1,
+    "february": 2, "pebrero": 2,
+    "march": 3, "marso": 3,
+    "april": 4, "abril": 4,
+    "may": 5, "mayo": 5,
+    "june": 6, "hunyo": 6,
+    "july": 7, "hulyo": 7,
+    "august": 8, "agosto": 8,
+    "september": 9, "setyembre": 9,
+    "october": 10, "oktubre": 10,
+    "november": 11, "nobyembre": 11,
+    "december": 12, "disyembre": 12,
+}
+
+MONTHS_REGEX = r"(January|February|March|April|May|June|July|August|September|October|November|December|Enero|Pebrero|Marso|Abril|Mayo|Hunyo|Hulyo|Agosto|Setyembre|Oktubre|Nobyembre|Disyembre)"
+
 DATE_PATTERNS = [
     (re.compile(r"\b(\d+)\s*m\b", re.I), lambda m: int(m.group(1)) / 60 / 24),
     (re.compile(r"\b(\d+)\s*h\b", re.I), lambda m: int(m.group(1)) / 24),
@@ -305,9 +322,9 @@ DATE_PATTERNS = [
     (re.compile(r"Kahapon", re.I), lambda m: 1.0),
     (re.compile(r"Ngayon", re.I), lambda m: 0.0),
     (re.compile(r"(?:noong\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|lunes|martes|miyerkules|huwebes|biyernes|sabado|linggo)", re.I), weekday_age_days),
-    (re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s*(\d{4})", re.I), None),
-    (re.compile(r"(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+at\s+\d{1,2}:\d{2})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, datetime.strptime(m.group(2), "%B").month, int(m.group(1)))).days)),
-    (re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:\s+at\s+\d{1,2}:\d{2})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, datetime.strptime(m.group(1), "%B").month, int(m.group(2)))).days)),
+    (re.compile(rf"{MONTHS_REGEX}\s+(\d{{1,2}}),\s*(\d{{4}})", re.I), None),
+    (re.compile(rf"(\d{{1,2}})\s+(?:ng\s+)?{MONTHS_REGEX}(?:\s+at\s+\d{{1,2}}:\d{{2}})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, MONTH_MAP.get(m.group(2).lower(), 1), int(m.group(1)))).days)),
+    (re.compile(rf"{MONTHS_REGEX}\s+(\d{{1,2}})(?:\s+at\s+\d{{1,2}}:\d{{2}})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, MONTH_MAP.get(m.group(1).lower(), 1), int(m.group(2)))).days)),
 ]
 
 
@@ -318,11 +335,11 @@ def parse_age_days(text: str) -> float | None:
         m = pattern.search(text)
         if m:
             if converter is None:
-                month_name = m.group(1)
+                month_name = m.group(1).lower()
                 day = int(m.group(2))
                 year = int(m.group(3))
                 try:
-                    month = datetime.strptime(month_name, "%B").month
+                    month = MONTH_MAP.get(month_name, 1)
                     post_date = datetime(year, month, day)
                     return max(0.0, (datetime.utcnow() - post_date).days)
                 except Exception:
