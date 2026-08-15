@@ -69,6 +69,8 @@ jobs:
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2:  ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3:  ${{ secrets.GEMINI_API_KEY_3 }}
           FB_C_USER:         ${{ secrets.FB_C_USER }}
           FB_XS:             ${{ secrets.FB_XS }}
           FB_DATR:           ${{ secrets.FB_DATR }}
