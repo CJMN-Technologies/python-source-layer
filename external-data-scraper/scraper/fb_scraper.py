@@ -43,6 +43,43 @@ def _get_gemini_keys():
 
 OCR_CACHE: dict[str, str] = {}
 
+def extract_text_from_image(img_url: str) -> str:
+    """Download image and extract text via Gemini 2.0 Flash OCR."""
+    if not img_url:
+        return ""
+    if img_url in OCR_CACHE:
+        return OCR_CACHE[img_url]
+
+    keys = _get_gemini_keys()
+    if not keys:
+        return ""
+
+    try:
+        resp = requests.get(img_url, timeout=10)
+        if resp.status_code != 200:
+            return ""
+        image = Image.open(io.BytesIO(resp.content))
+
+        for key in keys:
+            try:
+                client = genai.Client(api_key=key)
+                res = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[image, "Extract all text from this image exactly as written. If no text is present, return nothing."]
+                )
+                extracted = res.text.strip() if res and res.text else ""
+                cleaned = clean_ocr_text(extracted)
+                OCR_CACHE[img_url] = cleaned
+                return cleaned
+            except Exception as ke:
+                if "quota" in str(ke).lower() or "429" in str(ke):
+                    continue
+                break
+    except Exception as e:
+        pass
+
+    return ""
+
 # OCR image pre-check keywords — if these appear in caption, skip OCR (already have text)
 # Also used as OCR relevance gate: only OCR if caption alone fails the keyword filter
 OCR_KEYWORDS = [
