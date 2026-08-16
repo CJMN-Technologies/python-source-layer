@@ -192,6 +192,7 @@ def run_pipeline(batch: str = "all"):
             account_info = {"account_label": profile["label"], "env_suffix": profile["env_suffix"]}
             if account_info not in expired_accounts:
                 expired_accounts.append(account_info)
+                send_cookie_alert([account_info], scraper_name="Events Pipeline")
             print(f"  Cookie expired for {profile['label']}! Trying next account...")
 
             # Try remaining profiles for this page
@@ -214,6 +215,7 @@ def run_pipeline(batch: str = "all"):
                 if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
                     if fallback_info not in expired_accounts:
                         expired_accounts.append(fallback_info)
+                        send_cookie_alert([fallback_info], scraper_name="Events Pipeline")
                     print(f"  Cookie also expired for {fallback_profile['label']}!")
                     continue
                 else:
@@ -327,10 +329,6 @@ def run_pipeline(batch: str = "all"):
     if newly_saved_events:
         print("Sending email alert for new events...")
         send_pipeline_alert(newly_saved_events)
-
-    if expired_accounts:
-        print(f"Sending cookie expiration alert for {len(expired_accounts)} account(s)...")
-        send_cookie_alert(expired_accounts, scraper_name="Events Pipeline")
 
 
 if __name__ == "__main__":

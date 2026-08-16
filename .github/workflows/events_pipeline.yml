@@ -86,6 +86,11 @@ jobs:
           FB_DATR_2:         ${{ secrets.FB_DATR_2 }}
           FB_FR_2:           ${{ secrets.FB_FR_2 }}
           FB_SB_2:           ${{ secrets.FB_SB_2 }}
+          FB_C_USER_3:       ${{ secrets.FB_C_USER_3 }}
+          FB_XS_3:           ${{ secrets.FB_XS_3 }}
+          FB_DATR_3:         ${{ secrets.FB_DATR_3 }}
+          FB_FR_3:           ${{ secrets.FB_FR_3 }}
+          FB_SB_3:           ${{ secrets.FB_SB_3 }}
           SENDER_EMAIL:      ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD:   ${{ secrets.SENDER_PASSWORD }}
           RECEIVER_EMAIL:    ${{ secrets.RECEIVER_EMAIL }}
