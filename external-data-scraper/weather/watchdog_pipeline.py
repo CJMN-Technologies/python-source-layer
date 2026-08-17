@@ -62,10 +62,10 @@ def run_weather_watchdog():
         stale_stations = stations
 
     if not stale_stations:
-        print("✅ Watchdog Audit Complete: All station weather data is fresh (updated within 45 minutes). Zero backup action needed.")
+        print("[OK] Watchdog Audit Complete: All station weather data is fresh (updated within 45 minutes). Zero backup action needed.")
         return
 
-    print(f"\n🚨 Watchdog Triggered: {len(stale_stations)} station(s) require backup weather ingestion.")
+    print(f"\n[TRIGGERED] Watchdog Triggered: {len(stale_stations)} station(s) require backup weather ingestion.")
 
     updated_count = 0
     for station in stale_stations:
