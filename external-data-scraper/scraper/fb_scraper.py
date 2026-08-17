@@ -674,48 +674,33 @@ def candidate_page_urls(page_url: str) -> list[str]:
     return unique_candidates
 
 
-def click_see_more_buttons(page, max_clicks: int = 30):
+def click_see_more_buttons(page, max_clicks: int = 20):
+    """Expand all inline 'See more' / 'Tumingin pa' buttons directly in the DOM without navigating."""
+    try:
+        # Fast JavaScript-level click on all inline expansion buttons across the feed
+        page.evaluate("""() => {
+            const buttons = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], div[role="article"] div[role="button"]'));
+            for (const btn of buttons) {
+                const txt = (btn.innerText || '').toLowerCase().trim();
+                if (txt === 'see more' || txt === 'tumingin pa' || txt === 'read more' || txt.includes('see more') || txt.includes('tumingin pa')) {
+                    try { btn.click(); } catch (e) {}
+                }
+            }
+        }""")
+    except Exception:
+        pass
+
+    # Secondary fallback with Playwright locator
     for _ in range(max_clicks):
-        buttons = page.locator("text=/See more|Tumingin pa/i")
-        if buttons.count() == 0:
-            break
         try:
-            buttons.first.click(timeout=5000, force=True)
-            time.sleep(0.5)
+            buttons = page.locator("text=/See more|Tumingin pa/i")
+            if buttons.count() == 0:
+                break
+            buttons.first.click(timeout=1500, force=True)
+            time.sleep(0.2)
         except Exception:
             break
 
-
-def fetch_full_post_text(ctx, post_url: str):
-    """Visit a post's permalink and extract the untruncated caption text and post age."""
-    page2 = ctx.new_page()
-    try:
-        post_url = canonical_facebook_url(post_url)
-        page2.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-        time.sleep(2)
-
-        click_see_more_buttons(page2)
-
-        soup2 = BeautifulSoup(page2.content(), "html.parser")
-        post_age = extract_post_age(soup2)
-
-        # Try known selectors in order: www (data-ad-preview), mbasic/story containers, article/role=article
-        el2 = soup2.find("div", {"data-ad-preview": "message"})
-        if not el2:
-            try:
-                el2 = soup2.find("div", id=re.compile(r"m_story_permalink_view|story"))
-            except Exception:
-                el2 = None
-        if not el2:
-            el2 = soup2.find("article") or soup2.find("div", {"role": "article"})
-
-        if el2:
-            return el2.get_text(separator=" ", strip=True), post_age
-    except Exception as e:
-        print(f"    Failed to fetch full post text: {e}")
-    finally:
-        page2.close()
-    return None, None
 
 
 def normalize_playwright_cookies(cookies: list) -> list:
@@ -797,10 +782,15 @@ def scrape_page(
     page_ocr_count = 0  # tracks total OCR calls for this page
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
         ctx = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            # Disable images for faster loads (we only fetch specific scontent images)
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-PH",
+            timezone_id="Asia/Manila",
             java_script_enabled=True,
         )
         norm = normalize_playwright_cookies(cookies)
@@ -825,7 +815,7 @@ def scrape_page(
                 except Exception as e:
                     print(f"  Surface failed: {e}")
                     continue
-                time.sleep(3)
+                time.sleep(random.uniform(2.5, 4.0))
 
                 # Check for login wall — cookies expired
                 try:
@@ -846,6 +836,9 @@ def scrape_page(
 
                 for i in range(max_scrolls):
                     print(f"  Scrolling... ({i + 1}/{max_scrolls})")
+
+                    # Expand visible captions inline before reading DOM
+                    click_see_more_buttons(page)
 
                     try:
                         html_content = page.content()
@@ -898,27 +891,8 @@ def scrape_page(
                             print(f"  Skipped old post ({post_age_days:.1f}d > {max_age_days}d limit).")
                             continue
 
-                        # --- CAPTION KEYWORD PRE-CHECK (before fetching full post / OCR) ---
+                        # --- CAPTION KEYWORD PRE-CHECK ---
                         caption_passes = is_relevant_event(caption_text)
-
-                        # Only fetch full post text if the URL is a true permalink
-                        if post_url != page.url and "plugins/page.php" not in page.url:
-                            full_text, fetched_post_age_days = fetch_full_post_text(ctx, post_url)
-                            if full_text:
-                                caption_text = full_text
-                            if fetched_post_age_days is not None:
-                                post_age_days = fetched_post_age_days
-                                # Re-check age after fetching full text
-                                if post_age_days > max_age_days:
-                                    print(f"  Skipped old post ({post_age_days:.1f}d) after permalink fetch.")
-                                    continue
-
-                        if is_truncated(caption_text) and post_url != page.url and post_age_days is None:
-                            full_text, fetched_post_age_days = fetch_full_post_text(ctx, post_url)
-                            if full_text:
-                                caption_text = full_text
-                            if fetched_post_age_days is not None:
-                                post_age_days = fetched_post_age_days
 
                         # Strip leftover "See more"/"Tumingin pa" artifact
                         for suffix in ["see more", "tumingin pa"]:

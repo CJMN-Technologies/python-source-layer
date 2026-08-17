@@ -39,7 +39,7 @@ from email_notifier import send_calendar_with_attachment, send_cookie_alert
 from fb_scraper import (
     candidate_page_urls, click_see_more_buttons, normalize_playwright_cookies,
     get_ancestor, find_ancestor_with_link, clean_url, parse_age_days,
-    is_truncated, fetch_full_post_text, get_post_header_text, is_video_post,
+    is_truncated, get_post_header_text, is_video_post,
     extract_text_from_image, clean_ocr_text, _block_unnecessary_resources,
     is_valid_facebook_post_url
 )
@@ -275,9 +275,16 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
     posts_found = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
         ctx = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-PH",
+            timezone_id="Asia/Manila",
+            java_script_enabled=True,
         )
 
         norm = normalize_playwright_cookies(cookies)
@@ -298,7 +305,7 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
                 except Exception as e:
                     print(f"  Surface failed: {e}")
                     continue
-                time.sleep(3)
+                time.sleep(random.uniform(2.5, 4.0))
 
                 # Check for login wall
                 if page.locator("text=You must log in to continue").count() > 0 or \
@@ -314,6 +321,10 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
 
                 for i in range(max_scrolls):
                     print(f"  Scrolling... ({i + 1}/{max_scrolls})")
+
+                    # Expand visible captions inline
+                    click_see_more_buttons(page)
+
                     try:
                         html_content = page.content()
                     except Exception as e:
@@ -360,17 +371,6 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
                             hit_cutoff = True
                             print(f"  Hit {MAX_AGE_DAYS}-day cutoff ({post_age_days:.1f}d). Stopping scroll.")
                             break
-
-                        # Fetch full post text if truncated
-                        if is_truncated(caption_text) and post_url != page.url:
-                            full_text, fetched_age = fetch_full_post_text(ctx, post_url)
-                            if full_text:
-                                caption_text = full_text
-                            if fetched_age is not None:
-                                post_age_days = fetched_age
-                                if post_age_days > MAX_AGE_DAYS:
-                                    hit_cutoff = True
-                                    break
 
                         # Strip trailing "See more" artifacts
                         for suffix in ["see more", "tumingin pa"]:

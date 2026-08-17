@@ -53,12 +53,14 @@ This avoids one huge README while still giving each teammate the context they ne
 | Scheduling | GitHub Actions cron, APScheduler for local long-running schedulers |
 | Configuration | `.env` files, GitHub Actions secrets |
 
-## Classification Pipeline
+## Classification & Stealth Scraping Pipeline
 
-The events scraper uses a **two-stage classification pipeline**:
+The events scraper uses a **two-stage classification pipeline** with humanized stealth browsing:
 
-1. **Pre-filter (keywords)** — `keywords.py` checks if the post text contains any known disruption keywords using `.casefold()` matching. Posts without any keyword hit are discarded immediately to save LLM API quota.
-2. **LLM extraction (Gemini)** — `llm_classifier.py` passes pre-filtered posts to Gemini 2.0 Flash for structured classification. The LLM returns a `category`, `event_name`, and `event_date`. If all Gemini API keys are exhausted, the pipeline falls back to the keyword category.
+1. **In-Place DOM Caption Expansion & Stealth Context** — Playwright runs with authentic desktop browser headers (Chrome 128, 1080p, `en-PH`, `Asia/Manila`, `--disable-blink-features=AutomationControlled`). As the scraper scrolls, it expands `"See More"` / `"Tumingin pa"` buttons directly in the DOM without opening separate permalinks, eliminating rate-limiting and cross-post sidebar contamination.
+2. **Pre-filter (keywords)** — `keywords.py` checks if the post text contains any known disruption keywords using `.casefold()` matching. Posts without any keyword hit are discarded immediately to save LLM API quota.
+3. **Multi-Modal LLM extraction (Gemini)** — `llm_classifier.py` fuses the expanded caption and Gemini Vision OCR from attached infographics to extract structured metadata (`category`, `event_name`, `event_date`, `event_code`).
+4. **Database Transformation Sync** — Once stored in `external.academic_lgu_events`, the PostgreSQL trigger `tg_sync_academic_lgu_events` evaluates the post via `external.classify_event_from_text` (equipped with resilient, tense-agnostic regex and `#WalangPasok` hashtag matching) to automatically insert qualified disruption events into `external.events_consolidated`.
 
 Before a post can be saved, the scraper validates `source_url` so only trusted Facebook post/photo links from the configured page are inserted. Personal profile links, `/people/` links, comment/reply links, videos, and reels are skipped to keep `external.academic_lgu_events` limited to official page announcements.
 
@@ -71,14 +73,13 @@ Post categories:
 | `pagasa` | PAGASA weather bulletins relevant to NCR / LRT-2 catchment areas |
 | `academic_calendar` | A post sharing a full academic calendar document (triggers Excel generation + email) |
 
-## GitHub Actions Batch System
+## GitHub Actions Matrix System
 
-The events scraper splits Facebook pages into **4 batches (A, B, C, D)** to stay within the GitHub Actions free-tier budget (~2,000 minutes/month):
+The events scraper executes via a matrix strategy running across **Eastbound** and **Westbound** station clusters across **3 daily time windows**:
 
-- **Morning run** (6:00 AM PHT / 22:00 UTC): Batches A and B
-- **Afternoon run** (3:00 PM PHT / 07:00 UTC): Batches C and D
-
-Each page takes ~50 seconds with `DEFAULT_MAX_SCROLLS = 3`, totaling ~32 minutes/day (~960 minutes/month).
+- **4:00 AM PHT** (20:00 UTC): Early morning class suspension and transport strike scanning
+- **11:00 AM PHT** (03:00 UTC): Midday weather, class, and afternoon activity adjustments
+- **4:00 PM PHT** (08:00 UTC): Evening advisories, next-day suspensions, and event updates
 
 ## Environment Variables
 
@@ -109,7 +110,8 @@ The active workflow files are in `.github/workflows/` at the repository root:
 | --- | --- | --- | --- |
 | Events Pipeline | `events_pipeline.yml` | 4:00 AM, 11:00 AM, and 4:00 PM PHT daily (3 time windows) | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
 | Calendar Scraper | `calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | Scrapes for academic calendar releases, generates `.xlsx` files, and auto-commits them to the repo. |
-| Weather Pipeline | `weather_pipeline.yml` | Daily at 8:00 AM PHT (00:00 UTC) | Updates current weather observations and 7-day forecasts for all LRT-2 stations. |
+| Weather Pipeline | `weather_pipeline.yml` | Hourly from 5:00 AM to 10:00 PM PHT (`0 21-23,0-14 * * *`) | Updates current weather observations and 7-day forecasts for all 13 LRT-2 stations. |
+| Weather Watchdog | `weather_watchdog_pipeline.yml` | Half-hourly backup from 5:30 AM to 10:30 PM PHT (`30 21-23,0-14 * * *`) | Secondary failover watchdog ensuring station weather metrics remain updated. |
 
 ## Security Notes
 

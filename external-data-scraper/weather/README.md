@@ -119,16 +119,18 @@ python scheduler.py
 
 The scheduler runs both observations and forecasts every hour at minute `0`. It performs an initial fetch immediately on startup.
 
-**GitHub Actions** uses a single workflow:
+**GitHub Actions** uses two automated workflows:
 
 ```text
 .github/workflows/weather_pipeline.yml
+.github/workflows/weather_watchdog_pipeline.yml
 ```
 
-| Schedule | Behavior |
-| --- | --- |
-| Daily at 00:00 UTC (8:00 AM PHT) | Runs the full pipeline (observations + forecasts) |
-| Manual dispatch | Can be triggered manually from the GitHub Actions UI |
+| Workflow | Schedule | Behavior |
+| --- | --- | --- |
+| **Main Weather Pipeline** | Hourly from 5:00 AM to 10:00 PM PHT (`0 21-23,0-14 * * *`) | Runs the full pipeline (observations + forecasts) across all 13 stations |
+| **Watchdog Backup Pipeline** | Half-hourly from 5:30 AM to 10:30 PM PHT (`30 21-23,0-14 * * *`) | Redundant failover run to ensure fresh weather data |
+| **Manual Dispatch** | On-demand via GitHub UI (`workflow_dispatch`) | Immediate manual run |
 
 ## Required Seed Data
 

@@ -2,7 +2,11 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# Ensure we can import from scraper
+# Fix Windows console encoding
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from keywords import classify_post
 from llm_classifier import classify_post_llm

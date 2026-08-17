@@ -78,9 +78,9 @@ Facebook Post
            │ (keyword hit)
            ▼
 ┌──────────────────────────┐
-│ 2. Truncation Resolution │  fb_scraper.py — expands 'See More', '...', '\u2026'
-│    & Full Text Extraction│  Navigates permalinks directly for truncated posts
-│                          │  Increases storage limit to 5,000 chars
+│ 2. In-Place DOM Expansion│  fb_scraper.py — expands 'See More' / 'Tumingin pa' inline
+│    & Multi-Modal OCR     │  Zero-cost client-side DOM click (0 extra HTTP requests)
+│                          │  Gemini Vision OCR extracts full memo text from infographics
 └──────────┬───────────────┘
            │
            ▼
@@ -102,7 +102,7 @@ Facebook Post
            ▼
 ┌──────────────────────────┐
 │ 5. Database Trigger      │  external.sync_academic_lgu_to_events_consolidated()
-│    Classification Sync   │  Evaluates event_name + source_name if caption cut off
+│    Classification Sync   │  Broadened regex (tense-agnostic, #WalangPasok hashtag resilience)
 └──────────┬───────────────┘
            │
            ▼
@@ -275,10 +275,35 @@ Blocked URL formats:
 - Reels, videos, and watch links because they are not reliably readable by the LLM/OCR flow
 - Mismatched page-slug post URLs, for example a personal `/janlexcasas/posts/...` URL while scraping the configured `PasigPIO` page
 
+## Authoritative Station Source Registry
+
+Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_type` (`academic` vs `lgu`), guaranteeing that academic institutions are never miscategorized as LGU:
+
+| Station | Source Type | Official Page / Organization |
+| --- | --- | --- |
+| **Recto** | `academic` | University of the East (UE) Manila, UE Student Council, Far Eastern University (FEU) Manila, FEU Central Student Organization |
+| **Recto** | `lgu` | Manila Public Information Office |
+| **Legarda** | `academic` | University of Santo Tomas (UST), UST Central Student Council, San Beda University, San Beda Student Council |
+| **Pureza** | `academic` | Polytechnic University of the Philippines (PUP Main), PUP Sentral na Konseho ng Mag-aaral |
+| **V. Mapa** | `academic` | UERM Memorial Medical Center, UERM Medicine Student Council |
+| **J. Ruiz** | `lgu` | San Juan City Government |
+| **Gilmore** | `academic` | St. Paul University Quezon City, St. Paul University QC SAO |
+| **Gilmore** | `lgu` | Quezon City Government |
+| **Betty Go-Belmonte** | `academic` | Stella Maris College |
+| **Cubao** | `academic` | Technological Institute of the Philippines (TIP Cubao) |
+| **Anonas** | `academic` | World Citi Colleges (WCC) Quezon City |
+| **Katipunan** | `academic` | University of the Philippines Diliman, UP Diliman USC, Ateneo de Manila University (ADMU), Ateneo Sanggunian |
+| **Santolan** | `lgu` | Pasig City Public Information Office |
+| **Marikina-Pasig** | `lgu` | Marikina Public Information Office, Municipality of Cainta |
+| **Antipolo** | `academic` | Our Lady of Fatima University (OLFU Antipolo) |
+| **Antipolo** | `lgu` | Antipolo City Government PIO |
+
 ## Special Filters
 
-- **PAGASA geographic filter** — only keeps PAGASA posts that mention NCR, Metro Manila, or LRT-2 catchment cities (Quezon City, Pasig, Marikina, Antipolo, etc.). Province-only bulletins are discarded.
-- **OLFU campus filter** — for Our Lady of Fatima University, only accepts posts that explicitly mention "Antipolo" (the campus near LRT-2).
+- **OLFU Antipolo Branch Filter** — Our Lady of Fatima University posts from a nationwide page covering all Philippine branches (`Valenzuela`, `Metro Manila`, `Quezon City`, `Antipolo`, `Nueva Ecija`, `Laguna`, `Pampanga`). The pipeline strictly isolates the **Antipolo** branch:
+  1. If a post explicitly mentions `"antipolo"` (including multi-branch announcements listing Antipolo alongside other branches), it is **accepted**.
+  2. If a post is verified systemwide (`"all campuses"`, `"all olfu campuses"`, `"systemwide"`), it is **accepted**.
+  3. If a post only mentions other specific branches (`"valenzuela"`, `"quezon city"`, `"pampanga"`, `"nueva ecija"`, `"laguna"`) without Antipolo, it is **strictly rejected**.
 - **Cookie rotation** — when a Facebook account hits a login wall, the pipeline automatically tries the next available cookie profile. Expired accounts are tracked and reported via email.
 
 ## Email Alerts

@@ -84,49 +84,105 @@ def load_pages(batch: str = "all") -> list[dict]:
     return filtered
 
 
+def is_olfu_antipolo_post(text: str) -> bool:
+    """
+    Designated OLFU filter:
+    The OLFU official nationwide page posts advisories for various branches:
+    - OLFU Antipolo (LRT-2 Target Branch)
+    - OLFU Valenzuela
+    - OLFU Metro Manila
+    - OLFU Quezon City / QC
+    - OLFU Nueva Ecija / Cabanatuan
+    - OLFU Laguna / Sta. Rosa
+    - OLFU Pampanga / San Fernando
+    
+    Rule:
+    1. If text explicitly mentions 'antipolo', ACCEPT (even if other branches are listed in multi-branch announcements).
+    2. If text explicitly mentions true systemwide keywords ('all campuses', 'all olfu campuses', 'systemwide', 'entire university', 'across all campuses', 'all branches'), ACCEPT.
+    3. If text mentions other specific branches without mentioning 'antipolo', REJECT.
+    4. Otherwise, REJECT.
+    """
+    t = text.casefold()
+    if "antipolo" in t:
+        return True
+
+    other_branches = [
+        "valenzuela",
+        "quezon city",
+        "olfu qc",
+        "pampanga",
+        "san fernando",
+        "nueva ecija",
+        "cabanatuan",
+        "laguna",
+        "sta. rosa",
+        "santa rosa",
+        "metro manila"
+    ]
+    mentions_other_branch = any(b in t for b in other_branches)
+    if mentions_other_branch:
+        return False
+
+    is_truly_systemwide = any(k in t for k in [
+        "all campuses",
+        "all olfu campuses",
+        "all branches",
+        "systemwide",
+        "entire university",
+        "across all campuses"
+    ])
+    if is_truly_systemwide:
+        return True
+
+    return False
+
+
 def _determine_category(llm_res: dict, page: dict) -> str | None:
     """
     Determine the final category for a post.
 
-    Priority:
-    1. If LLM returns 'academic_calendar', preserve it (do NOT override).
-    2. If page is PAGASA, force 'pagasa'.
-    3. If page is an LGU/government/PIO, force 'lgu'.
-    4. Otherwise trust the LLM category ('academic').
+    Authoritative Mapping:
+    1. If LLM returns 'academic_calendar', preserve it.
+    2. If page has explicit 'source_type':
+       - 'academic' -> ALWAYS return 'academic'
+       - 'lgu'      -> ALWAYS return 'lgu'
+    3. Fallback to name-based registry if source_type is omitted.
     """
     llm_category = llm_res.get("category")
-
-    if llm_category is None:
+    if llm_category is None and not llm_res.get("llm_failed"):
         return None
 
     # Always preserve academic_calendar — do not override it
     if llm_category == "academic_calendar":
         return "academic_calendar"
 
+    source_type = page.get("source_type")
+    if source_type in ("academic", "lgu"):
+        return source_type
+
     page_name_lower = page["name"].casefold()
 
     if "pagasa" in page_name_lower:
         return "pagasa"
 
-    if (
-        "government" in page_name_lower
-        or "pio" in page_name_lower
-        or "city" in page_name_lower
-        or "municipality" in page_name_lower
-        or "lgu" in page_name_lower
-    ):
+    # Academic institutions registry
+    is_academic = any(kw in page_name_lower for kw in [
+        "university", "college", "school", "institute", "student council",
+        "sanggunian", "student organization", "konseho", "mag-aaral",
+        "feu", "ust", "ue", "pup", "uerm", "sbu", "tip", "wcc", "admu", "fatima"
+    ])
+    if is_academic:
+        return "academic"
+
+    # LGU / Government registry
+    is_lgu = any(kw in page_name_lower for kw in [
+        "government", "pio", "public information", "municipality", "city government", "lgu"
+    ])
+    if is_lgu:
         return "lgu"
 
-    # Prevent universities/academic pages from being wrongly classified as LGU
-    is_academic_page = any(kw in page_name_lower for kw in ["university", "college", "school", "institute", "student council", "sanggunian", "student organization", "konseho", "mag-aaral"])
-    if is_academic_page and llm_category == "lgu":
-        return "academic"
+    return "academic"
 
-    # For academic/student council pages, standardize category to 'academic'
-    if llm_category in ("academic", "acad"):
-        return "academic"
-
-    return llm_category if llm_category else "academic"
 
 
 def run_pipeline(batch: str = "all"):
@@ -242,13 +298,10 @@ def run_pipeline(batch: str = "all"):
                 print("  Skipped duplicate text (already in DB under different URL).")
                 continue
 
-            # OLFU filter: accept posts mentioning Antipolo campus OR systemwide/all campus suspensions
+            # OLFU filter: only accept posts for Antipolo branch or systemwide notices
             if "fatima" in page["url"].casefold() or "fatima" in page["name"].casefold():
-                combined_lower = combined.casefold()
-                is_antipolo = "antipolo" in combined_lower
-                is_systemwide = any(k in combined_lower for k in ["all campuses", "all levels", "systemwide", "entire university", "walang pasok", "class suspension", "suspended", "advisory", "notice"])
-                if not is_antipolo and not is_systemwide:
-                    print("  Skipped OLFU post: Does not apply to Antipolo campus.")
+                if not is_olfu_antipolo_post(combined):
+                    print("  Skipped OLFU post: Does not mention Antipolo branch or systemwide notice.")
                     continue
 
             # (PAGASA filtering logic removed)
