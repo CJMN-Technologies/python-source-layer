@@ -560,15 +560,12 @@ def get_post_header_text(el, caption_text: str, max_levels: int = 3) -> str:
 
 
 def is_video_post(el, levels: int = 4) -> bool:
-    """Check if this post is a video/reel - skip those entirely."""
+    """Check if this post is an actual video/reel element (avoid false positives from caption links)."""
     container = get_ancestor(el, levels)
     if container is None:
         return False
     if container.find("video"):
         return True
-    for a in container.find_all("a", {"href": True}, limit=50):
-        if VIDEO_PATTERN.search(a["href"]):
-            return True
     return False
 
 
