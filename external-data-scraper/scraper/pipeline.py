@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
@@ -97,12 +98,36 @@ def is_olfu_antipolo_post(text: str) -> bool:
     - OLFU Pampanga / San Fernando
     
     Rule:
-    1. If text explicitly mentions 'antipolo', ACCEPT (even if other branches are listed in multi-branch announcements).
-    2. If text explicitly mentions true systemwide keywords ('all campuses', 'all olfu campuses', 'systemwide', 'entire university', 'across all campuses', 'all branches'), ACCEPT.
-    3. If text mentions other specific branches without mentioning 'antipolo', REJECT.
+    1. If text explicitly mentions true systemwide keywords ('all campuses', 'all olfu campuses', 'systemwide', 'entire university', 'across all campuses', 'all branches', 'lahat ng campus'):
+       - Check if Antipolo is specifically excepted (e.g. 'except OLFU Antipolo', 'maliban sa Antipolo', 'excluding Antipolo').
+       - If Antipolo is NOT excepted, ACCEPT.
+       - If Antipolo IS excepted, REJECT.
+    2. If text explicitly mentions 'antipolo', ACCEPT (even if other branches are listed in multi-branch announcements).
+    3. If text mentions other specific branches without 'all campuses' and without mentioning 'antipolo', REJECT.
     4. Otherwise, REJECT.
     """
     t = text.casefold()
+
+    is_truly_systemwide = any(k in t for k in [
+        "all campuses",
+        "all olfu campuses",
+        "all branches",
+        "systemwide",
+        "entire university",
+        "across all campuses",
+        "lahat ng campus",
+    ])
+
+    if is_truly_systemwide:
+        # Check if Antipolo is specifically exempted/excepted
+        antipolo_excepted = bool(re.search(
+            r"(?:except|excluding|maliban\s+sa|bukod\s+sa)\s+(?:(?:for|sa)\s+)?(?:olfu\s+)?antipolo",
+            t
+        ))
+        if antipolo_excepted:
+            return False
+        return True
+
     if "antipolo" in t:
         return True
 
@@ -122,17 +147,6 @@ def is_olfu_antipolo_post(text: str) -> bool:
     mentions_other_branch = any(b in t for b in other_branches)
     if mentions_other_branch:
         return False
-
-    is_truly_systemwide = any(k in t for k in [
-        "all campuses",
-        "all olfu campuses",
-        "all branches",
-        "systemwide",
-        "entire university",
-        "across all campuses"
-    ])
-    if is_truly_systemwide:
-        return True
 
     return False
 

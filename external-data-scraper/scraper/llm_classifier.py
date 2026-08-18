@@ -83,6 +83,10 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - If the post caption text or OCR text ends abruptly or appears cut off with ellipses ('...') or trailing truncated words (e.g. "classes at al…"), evaluate available headline keywords (e.g. "Advisory", "Memorandum Circular No.", "In view of"), official organization name, and available image text.
    - Do NOT reject an advisory as null simply because a post caption cuts off before completing a sentence. If the post signals an official school/LGU advisory or class/work adjustment, output category ("academic" or "lgu") and a concise 5-8 word event_name based on the core advisory intent.
 
+7. STUDENT COUNCIL ADVOCACY & POLITICAL CRITIQUES vs OFFICIAL SUSPENSIONS:
+   - If a post from a student council (e.g. USC, Student Council) is a political statement, press release, commentary on governance/flood control, or petition asking for accountability/leniency (even if it uses rhetorical slogans like 'Walang Pasok dahil sa korapsyon' or 'Panawagan'), do NOT classify it as CLASS_SUSPENSION.
+   - If it does not announce a confirmed, declared suspension by the University administration or LGU, output category = null.
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 
@@ -110,6 +114,7 @@ CATEGORY "academic_calendar":
   - A post explicitly announcing or sharing a full Academic Calendar schedule document.
 
 CATEGORY null (reject — not relevant):
+  - Student council political commentary, statements of solidarity, corruption critiques, or petitions lacking official university administrative declaration.
   - Generic greetings, food/merchandise promos, job ads, alumni news with no commuter impact.
 
 === EXTRACTION RULES ===

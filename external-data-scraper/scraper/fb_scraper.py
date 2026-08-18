@@ -431,6 +431,27 @@ FOOTER_LINE_PATTERN = re.compile(
 )
 
 
+def is_content_image(img_tag, src: str) -> bool:
+    """Filter out small avatar profile icons, badges, and thumbnail logos."""
+    if not src or "scontent" not in src:
+        return False
+    # Check url patterns for avatar/profile dimensions
+    if any(dim in src for dim in ("50x50", "32x32", "24x24", "40x40", "16x16", "c0.0.50.50", "p50x50", "s50x50")):
+        return False
+    # Check width/height attributes if present
+    w = img_tag.get("width")
+    h = img_tag.get("height")
+    if w and str(w).isdigit() and int(w) < 120:
+        return False
+    if h and str(h).isdigit() and int(h) < 120:
+        return False
+    # Check alt tags / classes
+    alt = (img_tag.get("alt") or "").lower()
+    if "profile picture" in alt or "avatar" in alt:
+        return False
+    return True
+
+
 def strip_emojis(text: str) -> str:
     """Remove emoji characters from text."""
     return EMOJI_PATTERN.sub("", text)
@@ -867,33 +888,41 @@ def scrape_page(
                         # --- OCR: Run on post images if OCR budget is available ---
                         image_text = ""
                         if page_ocr_count < max_ocr_per_page:
-                            # Caption alone didn't match — check images for additional text
+                            # Search for images directly inside `el` (for image-only posts) AND in container
+                            candidate_img_tags = []
+                            if hasattr(el, "find_all"):
+                                candidate_img_tags.extend(el.find_all("img", {"src": True}))
                             image_container = get_ancestor(el, 3)
-                            if image_container:
-                                images = image_container.find_all("img", {"src": True})
-                                seen_images = set()
-                                ocr_count = 0
-                                for img in images:
-                                    if ocr_count >= 3 or page_ocr_count >= max_ocr_per_page:
-                                        break
-                                    src = img.get("src", "") or img.get("data-src", "")
-                                    if "scontent" in src and src not in seen_images:
-                                        seen_images.add(src)
-                                        ocr_result = extract_text_from_image(src)
-                                        if ocr_result:
-                                            image_text += " " + ocr_result
-                                        ocr_count += 1
-                                        page_ocr_count += 1
-                                if ocr_count > 0:
-                                    print(f"  OCR processed {ocr_count} image(s) [page budget: {page_ocr_count}/{max_ocr_per_page}]")
+                            if image_container and hasattr(image_container, "find_all"):
+                                candidate_img_tags.extend(image_container.find_all("img", {"src": True}))
+
+                            seen_images = set()
+                            ocr_count = 0
+                            for img in candidate_img_tags:
+                                if ocr_count >= 3 or page_ocr_count >= max_ocr_per_page:
+                                    break
+                                src = img.get("src", "") or img.get("data-src", "")
+                                if src and src not in seen_images and is_content_image(img, src):
+                                    seen_images.add(src)
+                                    ocr_result = extract_text_from_image(src)
+                                    if ocr_result:
+                                        image_text += " " + ocr_result
+                                    ocr_count += 1
+                                    page_ocr_count += 1
+                            if ocr_count > 0:
+                                print(f"  OCR processed {ocr_count} image(s) [page budget: {page_ocr_count}/{max_ocr_per_page}]")
 
                         if caption_text or image_text:
                             # Final relevance check with all text combined
                             if not is_relevant_event(caption_text, image_text):
                                 continue
 
+                            cleaned_text = clean_caption_text(caption_text)
+                            if not cleaned_text and image_text:
+                                cleaned_text = "Official Advisory / Announcement (Infographic)"
+
                             posts.append({
-                                "text": clean_caption_text(caption_text),
+                                "text": cleaned_text,
                                 "image_text": image_text.strip(),
                                 "source_url": post_url,
                                 "age_days": post_age_days

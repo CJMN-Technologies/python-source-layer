@@ -377,10 +377,14 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
                             if caption_text.lower().endswith(suffix):
                                 caption_text = caption_text[: -len(suffix)].rstrip(". ").strip()
 
-                        # OLFU filter: only Antipolo campus
+                        # OLFU filter: only Antipolo campus or systemwide notice
                         if "fatima" in page_url.casefold() or "fatima" in page_name.casefold():
                             normalized_caption = normalize_unicode_text(caption_text).casefold()
-                            if "antipolo" not in normalized_caption:
+                            is_sys = any(k in normalized_caption for k in ["all campuses", "all olfu campuses", "all branches", "systemwide", "entire university"])
+                            antipolo_excepted = bool(re.search(r"(?:except|excluding|maliban\s+sa)\s+(?:(?:for|sa)\s+)?(?:olfu\s+)?antipolo", normalized_caption))
+                            if is_sys and antipolo_excepted:
+                                continue
+                            if not is_sys and "antipolo" not in normalized_caption:
                                 continue
 
                         # --- CALENDAR KEYWORD CHECK ---

@@ -302,8 +302,8 @@ Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_t
 
 - **OLFU Antipolo Branch Filter** — Our Lady of Fatima University posts from a nationwide page covering all Philippine branches (`Valenzuela`, `Metro Manila`, `Quezon City`, `Antipolo`, `Nueva Ecija`, `Laguna`, `Pampanga`). The pipeline strictly isolates the **Antipolo** branch:
   1. If a post explicitly mentions `"antipolo"` (including multi-branch announcements listing Antipolo alongside other branches), it is **accepted**.
-  2. If a post is verified systemwide (`"all campuses"`, `"all olfu campuses"`, `"systemwide"`), it is **accepted**.
-  3. If a post only mentions other specific branches (`"valenzuela"`, `"quezon city"`, `"pampanga"`, `"nueva ecija"`, `"laguna"`) without Antipolo, it is **strictly rejected**.
+  2. If a post is verified systemwide (`"all campuses"`, `"all olfu campuses"`, `"systemwide"`, `"entire university"`), the pipeline parses exception clauses (`except/excluding/maliban sa [branch]`). If another branch is excepted (e.g. `All OLFU Campuses (except OLFU Quezon City)`), Antipolo is **accepted**. If Antipolo itself is excepted, it is **rejected**.
+  3. If a post only mentions other specific branches (`"valenzuela"`, `"quezon city"`, `"pampanga"`, `"nueva ecija"`, `"laguna"`) without Antipolo or systemwide phrasing, it is **strictly rejected**.
 - **Cookie rotation** — when a Facebook account hits a login wall, the pipeline automatically tries the next available cookie profile. Expired accounts are tracked and reported via email.
 
 ## Email Alerts
