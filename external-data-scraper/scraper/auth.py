@@ -10,6 +10,12 @@ def get_all_cookie_profiles() -> list[list[dict]]:
         return v if v else ""
 
     profiles = []
+
+
+def get_cookies() -> list[dict]:
+    """Backward-compatible helper returning primary account cookies."""
+    profiles = get_all_cookie_profiles()
+    return profiles[0] if profiles else []
     
     # Check default account (no suffix)
     if os.getenv("FB_C_USER") and os.getenv("FB_XS"):
@@ -48,19 +54,18 @@ def get_all_cookie_profiles() -> list[list[dict]]:
     return profiles
 
 
-def get_all_cookie_profiles_labeled() -> list[dict]:
+def get_all_cookie_profiles_labeled(batch: str = "all") -> list[dict]:
     """Return cookie profiles with human-readable labels and env suffixes.
-    
-    Each item is a dict with:
-        - cookies: list[dict] — the cookie dicts for Playwright
-        - label: str — human-readable label e.g. "Account 1 (Primary)"
-        - env_suffix: str — the env var suffix e.g. "" for primary, "_1" for backup 1
+
+    When running parallel matrix batches (e.g. Eastbound vs Westbound),
+    this function partitions the available accounts so concurrent runners
+    never share or collide on the same Facebook account simultaneously.
     """
     def _g(k: str, suffix: str = "") -> str:
         v = os.getenv(f"{k}{suffix}")
         return v if v else ""
 
-    profiles = []
+    all_profiles = []
 
     # Check default account (no suffix)
     if os.getenv("FB_C_USER") and os.getenv("FB_XS"):
@@ -71,7 +76,7 @@ def get_all_cookie_profiles_labeled() -> list[dict]:
         except Exception:
             xs = xs_raw
 
-        profiles.append({
+        all_profiles.append({
             "cookies": [
                 {"name": "c_user", "value": _g("FB_C_USER"), "domain": ".facebook.com", "path": "/"},
                 {"name": "xs",     "value": xs,               "domain": ".facebook.com", "path": "/"},
@@ -94,7 +99,7 @@ def get_all_cookie_profiles_labeled() -> list[dict]:
             except Exception:
                 xs = xs_raw
 
-            profiles.append({
+            all_profiles.append({
                 "cookies": [
                     {"name": "c_user", "value": _g("FB_C_USER", suffix), "domain": ".facebook.com", "path": "/"},
                     {"name": "xs",     "value": xs,                       "domain": ".facebook.com", "path": "/"},
@@ -106,4 +111,21 @@ def get_all_cookie_profiles_labeled() -> list[dict]:
                 "env_suffix": suffix,
             })
 
-    return profiles
+    if not all_profiles:
+        return []
+
+    batch_key = (batch or "all").strip().lower()
+
+    # Dedicated Pool Allocation:
+    # If 2 or more accounts exist, split across Eastbound and Westbound to prevent dual-runner collisions
+    if len(all_profiles) >= 2:
+        if batch_key in ("eastbound", "east", "a"):
+            # Eastbound gets even-indexed accounts: Account 1 (Primary), Account 3 (Backup 2), etc.
+            east_pool = [p for i, p in enumerate(all_profiles) if i % 2 == 0]
+            return east_pool if east_pool else all_profiles
+        elif batch_key in ("westbound", "west", "b"):
+            # Westbound gets odd-indexed accounts: Account 2 (Backup 1), Account 4 (Backup 3), etc.
+            west_pool = [p for i, p in enumerate(all_profiles) if i % 2 != 0]
+            return west_pool if west_pool else all_profiles
+
+    return all_profiles

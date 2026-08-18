@@ -84,6 +84,8 @@ The events scraper executes via a matrix strategy running across **Eastbound** a
 - **11:00 AM PHT** (03:00 UTC): Midday weather, class, and afternoon activity adjustments
 - **4:00 PM PHT** (08:00 UTC): Evening advisories, next-day suspensions, and event updates
 
+The matrix automatically partitions your configured Facebook cookie profiles into non-overlapping account sets (Eastbound: Primary & Backup 2; Westbound: Backup 1 & Backup 3), preventing simultaneous session collisions across parallel runner VMs.
+
 ## Environment Variables
 
 The repo uses several secrets and environment variables for its pipelines:

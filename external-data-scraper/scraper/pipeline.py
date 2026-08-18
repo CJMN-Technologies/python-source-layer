@@ -215,8 +215,8 @@ def run_pipeline(batch: str = "all"):
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
-    # Load all cookie profiles (with labels) for rotation
-    cookie_profiles = get_all_cookie_profiles_labeled()
+    # Load batch-dedicated cookie profiles (with labels) for rotation
+    cookie_profiles = get_all_cookie_profiles_labeled(batch=batch)
     if not cookie_profiles:
         print("Warning: No FB cookie profiles found. Scraping may fail.")
         cookie_profiles = [{"cookies": [], "label": "None", "env_suffix": ""}]
