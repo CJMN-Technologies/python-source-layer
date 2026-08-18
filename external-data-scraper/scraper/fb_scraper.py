@@ -671,42 +671,25 @@ def candidate_page_urls(page_url: str) -> list[str]:
     return unique_candidates
 
 
-def click_see_more_buttons(page, max_clicks: int = 20):
-    """Expand all inline 'See more' / 'Tumingin pa' buttons directly in the DOM without navigating."""
+def click_see_more_buttons(page, max_clicks: int = 8):
+    """Expand inline 'See more' / 'Tumingin pa' buttons with humanized Playwright clicks."""
     try:
-        # Fast JavaScript-level click on all inline expansion buttons across the feed
-        page.evaluate("""() => {
-            const buttons = Array.from(document.querySelectorAll('div[role="button"], span[role="button"], a[role="button"], div[role="article"] div[role="button"]'));
-            for (const btn of buttons) {
-                const txt = (btn.innerText || '').toLowerCase().trim();
-                if (txt === 'see more' || txt === 'tumingin pa' || txt === 'read more' || txt.includes('see more') || txt.includes('tumingin pa')) {
-                    try { btn.click(); } catch (e) {}
-                }
-            }
-        }""")
+        locators = page.locator("text=/^\\s*(See more|Tumingin pa|Read more)\\s*$/i")
+        count = min(locators.count(), max_clicks)
+        for i in range(count):
+            try:
+                loc = locators.nth(i)
+                if loc.is_visible():
+                    loc.click(timeout=1000, delay=random.randint(60, 160))
+                    time.sleep(random.uniform(0.15, 0.35))
+            except Exception:
+                continue
     except Exception:
         pass
 
-    # Secondary fallback with Playwright locator
-    for _ in range(max_clicks):
-        try:
-            buttons = page.locator("text=/See more|Tumingin pa/i")
-            if buttons.count() == 0:
-                break
-            buttons.first.click(timeout=1500, force=True)
-            time.sleep(0.2)
-        except Exception:
-            break
-
-
 
 def normalize_playwright_cookies(cookies: list) -> list:
-    """Ensure cookie entries are valid strings for Playwright's add_cookies.
-
-    - Converts values to str
-    - Skips cookies missing a name or value
-    - Ensures domain and path are present
-    """
+    """Ensure cookie entries are valid strings for Playwright's add_cookies."""
     out = []
     if not cookies:
         return out
@@ -715,9 +698,7 @@ def normalize_playwright_cookies(cookies: list) -> list:
             name = c.get("name") if isinstance(c, dict) else None
             value = c.get("value") if isinstance(c, dict) else None
             if not name or value is None:
-                # skip invalid cookie
                 continue
-            # convert value to string (Playwright expects a string)
             value_str = value if isinstance(value, str) else str(value)
             domain = c.get("domain") or ".facebook.com"
             path = c.get("path") or "/"
@@ -734,21 +715,9 @@ def normalize_playwright_cookies(cookies: list) -> list:
 
 
 def _block_unnecessary_resources(route, request):
-    """Block CSS, fonts, media, and tracking pixels to speed up page loads."""
+    """Block heavy media to speed up loads without aborting core Facebook telemetry."""
     resource_type = request.resource_type
-    url = request.url
-    if resource_type in ("stylesheet", "font", "media"):
-        route.abort()
-        return
-    # Block known tracking/analytics domains
-    blocked_domains = [
-        "facebook.net/signals",
-        "connect.facebook.net",
-        "staticxx.facebook.com",
-        "pixel.facebook.com",
-        "an.facebook.com",
-    ]
-    if any(domain in url for domain in blocked_domains):
+    if resource_type in ("font", "media"):
         route.abort()
         return
     route.continue_()
@@ -814,13 +783,12 @@ def scrape_page(
                     continue
                 time.sleep(random.uniform(2.5, 4.0))
 
-                # Check for login wall — cookies expired
+                # Check for login wall — cookies expired / account checkpointed
                 try:
-                    is_login_url = "/login" in page.url.lower()
-                    has_login_text = page.locator("text=You must log in to continue").count() > 0
-                    has_login_inputs = page.locator("input[name='email']").count() > 0 and page.locator("input[name='pass']").count() > 0
+                    is_login_url = "/login" in page.url.lower() or "checkpoint" in page.url.lower()
+                    has_hard_wall = page.locator("text=You must log in to continue").count() > 0 or page.locator("text=Log in to Facebook to see this page").count() > 0
                     
-                    if is_login_url or has_login_text or has_login_inputs:
+                    if is_login_url or has_hard_wall:
                         print(f"  Login wall detected on {target_url}! Cookies likely expired.")
                         browser.close()
                         return [{"_cookie_expired": True}]
