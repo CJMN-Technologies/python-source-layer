@@ -749,6 +749,14 @@ def _block_unnecessary_resources(route, request):
     route.continue_()
 
 
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+]
+
+
 def scrape_page(
     page_url: str,
     cookies: list,
@@ -762,7 +770,7 @@ def scrape_page(
 
     Args:
         page_url:          Facebook page URL to scrape.
-        cookies:           Authenticated Facebook cookies.
+        cookies:           Authenticated Facebook cookies (empty list for public unauth mode).
         existing_urls:     Set of already-known post URLs to skip (dedup).
         max_scrolls:       How many times to scroll down per surface (default 8).
         max_age_days:      Hard cutoff — posts older than this are skipped
@@ -772,22 +780,28 @@ def scrape_page(
     """
     posts = []
     page_ocr_count = 0  # tracks total OCR calls for this page
+    chosen_ua = random.choice(USER_AGENTS)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+            ]
         )
         ctx = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            user_agent=chosen_ua,
             viewport={"width": 1920, "height": 1080},
             locale="en-PH",
             timezone_id="Asia/Manila",
             java_script_enabled=True,
         )
         norm = normalize_playwright_cookies(cookies)
+        has_auth_cookies = bool(norm)
         if not norm:
-            print("  Warning: no valid cookies provided to Playwright context")
+            print("  Note: Running in unauthenticated public fallback mode (no cookies).")
         else:
             try:
                 ctx.add_cookies(norm)
@@ -814,10 +828,13 @@ def scrape_page(
                     is_login_url = "/login" in page.url.lower() or "checkpoint" in page.url.lower()
                     has_hard_wall = page.locator("text=You must log in to continue").count() > 0 or page.locator("text=Log in to Facebook to see this page").count() > 0
                     
-                    if is_login_url or has_hard_wall:
+                    if (is_login_url or has_hard_wall) and has_auth_cookies:
                         print(f"  Login wall detected on {target_url}! Cookies likely expired.")
                         browser.close()
                         return [{"_cookie_expired": True}]
+                    elif is_login_url or has_hard_wall:
+                        print(f"  Unauth surface encountered login wall on {target_url}. Trying next candidate...")
+                        continue
                 except Exception:
                     pass
 

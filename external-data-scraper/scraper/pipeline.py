@@ -2,6 +2,8 @@ import json
 import os
 import re
 import sys
+import time
+import random
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
@@ -226,20 +228,32 @@ def run_pipeline(batch: str = "all"):
     except Exception as e:
         print(f"Warning: Could not fetch existing data from database: {e}")
 
+    batch_clean = (batch or "all").strip().lower()
+    if batch_clean in ("westbound", "west", "b"):
+        jitter = random.uniform(20.0, 35.0)
+        print(f"Applying startup stagger jitter for {batch.upper()} batch: waiting {jitter:.1f}s to prevent concurrent login collisions...")
+        time.sleep(jitter)
+
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
     # Load batch-dedicated cookie profiles (with labels) for rotation
     cookie_profiles = get_all_cookie_profiles_labeled(batch=batch)
     if not cookie_profiles:
-        print("Warning: No FB cookie profiles found. Scraping may fail.")
-        cookie_profiles = [{"cookies": [], "label": "None", "env_suffix": ""}]
+        print("Warning: No FB cookie profiles found. Running in unauthenticated public fallback mode.")
+        cookie_profiles = [{"cookies": [], "label": "None (Public Unauth)", "env_suffix": ""}]
 
     total_saved = 0
     newly_saved_events = []
     expired_accounts = []  # Track which accounts hit login walls
 
     for page_idx, page in enumerate(pages):
+        # Pacing delay between pages (except first page) to avoid rapid-fire bot signatures
+        if page_idx > 0:
+            pacing_delay = random.uniform(12.0, 22.0)
+            print(f"  Pacing delay before next page: sleeping {pacing_delay:.1f}s...")
+            time.sleep(pacing_delay)
+
         print(f"\n[{page_idx + 1}/{len(pages)}] Scraping: {page['name']} ({page['station']}) — Batch {page.get('batch','?')}")
 
         # Rotate cookie profiles across pages
@@ -275,6 +289,7 @@ def run_pipeline(batch: str = "all"):
                     continue  # skip already-expired accounts
 
                 print(f"  Retrying with {fallback_profile['label']}...")
+                time.sleep(random.uniform(5.0, 10.0))
                 posts = scrape_page(
                     page["url"],
                     fallback_profile["cookies"],
@@ -293,8 +308,18 @@ def run_pipeline(batch: str = "all"):
                     break
 
             if not recovered:
-                print(f"  All accounts expired. Skipping page: {page['name']}")
-                continue
+                print(f"  All cookie accounts hit login challenges. Attempting unauthenticated public fallback for {page['name']}...")
+                time.sleep(random.uniform(3.0, 6.0))
+                posts = scrape_page(
+                    page["url"],
+                    cookies=[],
+                    existing_urls=existing_urls,
+                    max_scrolls=page_max_scrolls,
+                    max_age_days=MAX_AGE_DAYS,
+                )
+                if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
+                    print(f"  Public fallback also blocked. Skipping page: {page['name']}")
+                    continue
 
         for post in posts:
             post_age_days = post.get("age_days")

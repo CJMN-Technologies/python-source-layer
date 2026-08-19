@@ -303,8 +303,12 @@ Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_t
 - **OLFU Antipolo Branch Filter** — Our Lady of Fatima University posts from a nationwide page covering all Philippine branches (`Valenzuela`, `Metro Manila`, `Quezon City`, `Antipolo`, `Nueva Ecija`, `Laguna`, `Pampanga`). The pipeline strictly isolates the **Antipolo** branch:
   1. If a post explicitly mentions `"antipolo"` (including multi-branch announcements listing Antipolo alongside other branches), it is **accepted**.
   2. If a post is verified systemwide (`"all campuses"`, `"all olfu campuses"`, `"systemwide"`, `"entire university"`), the pipeline parses exception clauses (`except/excluding/maliban sa [branch]`). If another branch is excepted (e.g. `All OLFU Campuses (except OLFU Quezon City)`), Antipolo is **accepted**. If Antipolo itself is excepted, it is **rejected**.
-  3. If a post only mentions other specific branches (`"valenzuela"`, `"quezon city"`, `"pampanga"`, `"nueva ecija"`, `"laguna"`) without Antipolo or systemwide phrasing, it is **strictly rejected**.
-- **Cookie rotation** — when a Facebook account hits a login wall, the pipeline automatically tries the next available cookie profile. Expired accounts are tracked and reported via email.
+- **Anti-Detection Pacing & Startup Jitter** — To prevent Facebook account checkpoints and bot flagging from cloud data center IPs:
+  1. **Startup Jitter**: Westbound runners wait 20–35 seconds before launching so concurrent matrix jobs never hit Facebook at the exact same millisecond.
+  2. **Inter-Page Pacing**: The pipeline enforces a randomized 12–22 second cooldown between consecutive page scrapes.
+  3. **User-Agent Pool**: Playwright randomly rotates among modern Windows and macOS desktop User-Agent strings (`Chrome 131`, `Chrome 130`, `Edge 129`).
+- **Cookie Rotation & Unauthenticated Public Fallback** — When authenticated cookie profiles hit login walls or checkpoints, the pipeline automatically rotates through backup profiles. If all accounts hit challenges, the pipeline immediately falls back to **unauthenticated public mode** (`/plugins/page.php`), ensuring public civic/academic scraping continues uninterrupted without failing.
+- **GitHub Actions Free Quota Optimization** — Redundant half-hourly watchdog polling is disabled; primary weather pipelines run with built-in 5x retries, keeping overall monorepo consumption at ~750 minutes/month (well within the 2,000 min/mo private repository quota).
 
 ## Email Alerts
 
