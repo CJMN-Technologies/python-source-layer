@@ -11,12 +11,6 @@ def get_all_cookie_profiles() -> list[list[dict]]:
 
     profiles = []
 
-
-def get_cookies() -> list[dict]:
-    """Backward-compatible helper returning primary account cookies."""
-    profiles = get_all_cookie_profiles()
-    return profiles[0] if profiles else []
-    
     # Check default account (no suffix)
     if os.getenv("FB_C_USER") and os.getenv("FB_XS"):
         xs_raw = os.getenv("FB_XS") or ""
@@ -52,6 +46,12 @@ def get_cookies() -> list[dict]:
             ])
             
     return profiles
+
+
+def get_cookies() -> list[dict]:
+    """Backward-compatible helper returning primary account cookies."""
+    profiles = get_all_cookie_profiles()
+    return profiles[0] if profiles else []
 
 
 def get_all_cookie_profiles_labeled(batch: str = "all") -> list[dict]:

@@ -402,7 +402,7 @@ def extract_post_age(soup: BeautifulSoup) -> float | None:
     return None
 
 
-# Regex to match emoji and other non-text Unicode symbols
+# Regex to match emoji and other non-text Unicode symbols (excluding 0x1D400-0x1D7FF Mathematical Alphanumerics)
 EMOJI_PATTERN = re.compile(
     "["
     "\U0001F600-\U0001F64F"  # emoticons
@@ -410,7 +410,8 @@ EMOJI_PATTERN = re.compile(
     "\U0001F680-\U0001F6FF"  # transport & map symbols
     "\U0001F1E0-\U0001F1FF"  # flags
     "\U00002702-\U000027B0"  # dingbats
-    "\U000024C2-\U0001F251"  # enclosed characters
+    "\U000024C2-\U000024E9"  # circled letters/digits
+    "\U0001F100-\U0001F251"  # enclosed supplements (excluding math 0x1D400-0x1D7FF)
     "\U0001F900-\U0001F9FF"  # supplemental symbols
     "\U0001FA00-\U0001FA6F"  # chess symbols
     "\U0001FA70-\U0001FAFF"  # symbols extended-A
@@ -458,8 +459,8 @@ def strip_emojis(text: str) -> str:
 
 
 def clean_ocr_text(text: str) -> str:
+    text = normalize_unicode_text(text)  # Convert stylized Unicode fonts to plain ASCII first
     text = strip_emojis(text)
-    text = normalize_unicode_text(text)  # Convert stylized Unicode fonts to plain ASCII
     text = re.sub(r"[^\S\r\n]+", " ", text)
     text = re.sub(r"\s*\n\s*", "\n", text)
     lines = []
@@ -480,10 +481,12 @@ def clean_ocr_text(text: str) -> str:
 
 
 def strip_social_boilerplate(text: str) -> str:
-    """Strip social media reaction counts, share counters, and trailing UI text."""
+    """Strip social media headers, reaction counts, share counters, and trailing UI text."""
     if not text:
         return ""
-    cleaned = re.sub(r"All reactions:.*", "", text, flags=re.IGNORECASE | re.DOTALL)
+    # Strip top author header like 'Page Name Verified account 4h · Shared with Public'
+    cleaned = re.sub(r"^.*?·\s*Shared with (?:Public|Friends)\s*", "", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"All reactions:.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
     cleaned = re.sub(r"\b\d+\s+reactions?\b.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
     cleaned = re.sub(r"\b\d+\s+shares?\b.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
     return cleaned.strip()
@@ -492,7 +495,9 @@ def strip_social_boilerplate(text: str) -> str:
 def clean_caption_text(text: str) -> str:
     """Strip emojis, social boilerplate, and normalize whitespace from post caption text."""
     text = strip_social_boilerplate(text)
+    text = normalize_unicode_text(text)  # Convert stylized Unicode fonts to plain ASCII first
     text = strip_emojis(text)
+    text = re.sub(r"\s*(?:See more|Tumingin pa|Read more)\s*[…\.]*$", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 

@@ -219,7 +219,7 @@ def run_pipeline(batch: str = "all"):
         if rows:
             existing_urls = {row.get("source_url") for row in rows if row.get("source_url")}
             for row in rows:
-                combined_db = f"{row.get('post_text') or ''} {row.get('image_text') or ''}".strip()
+                combined_db = re.sub(r"\s+", " ", f"{row.get('post_text') or ''} {row.get('image_text') or ''}").strip().casefold()
                 if combined_db:
                     existing_texts.add(combined_db[:100])
         print(f"Loaded {len(existing_urls)} existing events from database.")
@@ -305,9 +305,10 @@ def run_pipeline(batch: str = "all"):
                 continue
 
             combined = f"{post.get('text', '')} {post.get('image_text', '')}".strip()
+            normalized_combined = re.sub(r"\s+", " ", combined).strip().casefold()
+            post_prefix = normalized_combined[:100]
 
             # Deduplicate by text similarity (catches /posts/ vs /photo/ for same content)
-            post_prefix = combined[:100]
             if post_prefix and post_prefix in existing_texts:
                 print("  Skipped duplicate text (already in DB under different URL).")
                 continue
@@ -377,7 +378,8 @@ def run_pipeline(batch: str = "all"):
                 }).execute()
 
                 existing_urls.add(source_url)
-                existing_texts.add(post_prefix)
+                if post_prefix:
+                    existing_texts.add(post_prefix)
                 total_saved += 1
                 newly_saved_events.append({
                     "source_name": page["name"],
