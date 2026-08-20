@@ -197,23 +197,24 @@ def _format_category(cat: str) -> str:
     }
     return mapping.get(cat.lower(), cat.capitalize())
 
-def send_pipeline_alert(new_events: list):
-    subject = f"🔔 LRT-2 Scraper: {len(new_events)} New Events Found!"
+def send_pipeline_alert(new_events: list, batch: str = ""):
+    batch_label = f"[{batch.title()}] " if batch and batch.lower() != "all" else ""
+    subject = f"🔔 LRT-2 Scraper {batch_label}: {len(new_events)} New Events Found!"
     
     html = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f9f9f9;">
         <div style="max-width: 900px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border-top: 5px solid #2e7d32;">
-          <h2 style="color: #2e7d32; margin-top: 0; font-size: 24px;">New Events Extracted</h2>
+          <h2 style="color: #2e7d32; margin-top: 0; font-size: 24px;">New Events Extracted — <span style="color: #0288d1;">{batch.title() if batch else 'All Stations'}</span></h2>
           <p style="font-size: 15px; line-height: 1.5; color: #555;">The automated scraper has successfully extracted and classified new events into Supabase.</p>
           <table border="0" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; margin-top: 20px; font-size: 14px;">
             <thead>
               <tr style="background-color: #f2f5f3; text-align: left; border-bottom: 2px solid #2e7d32;">
+                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Batch / Station</th>
                 <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">University/LGU</th>
                 <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Category</th>
                 <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Event Name</th>
                 <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Event Date</th>
-                <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Date Scraped</th>
                 <th style="font-weight: bold; color: #2e7d32; padding: 12px 8px;">Link</th>
               </tr>
             </thead>
@@ -222,16 +223,22 @@ def send_pipeline_alert(new_events: list):
     
     for ev in new_events:
         formatted_date = _format_event_date(ev.get('event_date', ''))
-        formatted_scraped = _format_scraped_at(ev.get('scraped_at', ''))
         formatted_cat = _format_category(ev.get('category', ''))
+        station = ev.get('station', '')
+        ev_batch = ev.get('batch', batch) or "N/A"
+        batch_badge_color = "#e3f2fd" if "east" in ev_batch.lower() else "#fff3e0"
+        batch_text_color = "#0277bd" if "east" in ev_batch.lower() else "#e65100"
         
         html += f"""
               <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 12px 8px;">
+                  <span style="background-color: {batch_badge_color}; color: {batch_text_color}; padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold;">{ev_batch}</span>
+                  <br><small style="color: #666;">{station}</small>
+                </td>
                 <td style="padding: 12px 8px; font-weight: bold; color: #333;">{ev.get('source_name', '')}</td>
                 <td style="padding: 12px 8px;"><span style="background-color: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{formatted_cat}</span></td>
                 <td style="padding: 12px 8px; color: #555;">{ev.get('event_name', '')}</td>
                 <td style="padding: 12px 8px; font-weight: bold; color: #444;">{formatted_date}</td>
-                <td style="padding: 12px 8px; color: #666; font-size: 13px;">{formatted_scraped}</td>
                 <td style="padding: 12px 8px;"><a href="{ev.get('url', '#')}" style="color: #0288d1; text-decoration: none; font-weight: bold;">View Post</a></td>
               </tr>
         """

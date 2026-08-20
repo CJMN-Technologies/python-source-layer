@@ -358,6 +358,8 @@ def run_pipeline(batch: str = "all"):
                 total_saved += 1
                 newly_saved_events.append({
                     "source_name": page["name"],
+                    "station":     page.get("station", "N/A"),
+                    "batch":       page.get("batch", batch),
                     "category":    category,
                     "event_name":  event_name or "N/A",
                     "event_date":  event_date or "N/A",
@@ -371,8 +373,8 @@ def run_pipeline(batch: str = "all"):
     print(f"\n=== Done! {total_saved} posts saved to Supabase ===")
 
     if newly_saved_events:
-        print("Sending email alert for new events...")
-        send_pipeline_alert(newly_saved_events)
+        print(f"Sending email alert for {len(newly_saved_events)} new events (Batch: {batch})...")
+        send_pipeline_alert(newly_saved_events, batch=batch)
 
 
 if __name__ == "__main__":
