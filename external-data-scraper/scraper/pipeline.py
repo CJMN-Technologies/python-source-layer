@@ -241,7 +241,7 @@ def run_pipeline(batch: str = "all"):
         pages=pages,
         existing_urls=existing_urls,
         max_age_days=MAX_AGE_DAYS,
-        results_limit_per_page=5,
+        results_limit_per_page=10,
     )
 
     total_saved = 0
