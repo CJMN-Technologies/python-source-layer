@@ -1,4 +1,4 @@
-from playwright.sync_api import sync_playwright
+from apify_client import ApifyClient
 from bs4 import BeautifulSoup
 from google import genai
 import os
@@ -9,7 +9,7 @@ import time
 import random
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 from unicode_normalizer import normalize_unicode_text
 
@@ -75,43 +75,10 @@ def extract_text_from_image(img_url: str) -> str:
                 if "quota" in str(ke).lower() or "429" in str(ke):
                     continue
                 break
-    except Exception as e:
+    except Exception:
         pass
 
     return ""
-
-# OCR image pre-check keywords — if these appear in caption, skip OCR (already have text)
-# Also used as OCR relevance gate: only OCR if caption alone fails the keyword filter
-OCR_KEYWORDS = [
-    "university",
-    "class",
-    "classes",
-    "office",
-    "work",
-    "holiday",
-    "advisory",
-    "suspension",
-    "campus",
-    "campuses",
-    "admission",
-    "test",
-    "scheduled",
-    "walang",
-    "pasok",
-    "klase",
-    # New: transport/arena
-    "concert",
-    "event",
-    "tigil",
-    "welga",
-    "araneta",
-    "suspended",
-    "lrt",
-    "train",
-    "strike",
-    "delay",
-]
-
 
 PERMALINK_PATTERN = re.compile(r"(/posts/|/permalink|story_fbid=|/photos/|fbid=|/share/(p|photo)/)", re.I)
 VIDEO_PATTERN = re.compile(r"(/reel/|/videos/|/watch)")
@@ -128,12 +95,6 @@ PERSONAL_OR_UNSAFE_FACEBOOK_PATHS = (
     "/watch",
 )
 
-# ---------------------------------------------------------------------------
-# RELEVANT KEYWORDS — Aligned to Friction Index (all stored as lowercase;
-# matching uses .casefold() for ALL CAPS / Title Case / mixed support)
-# ---------------------------------------------------------------------------
-
-# Strong: posting any of these = almost certainly a relevant event
 STRONG_RELEVANT_KEYWORDS = [
     # Class suspension / holidays
     "no classes",
@@ -239,7 +200,6 @@ STRONG_RELEVANT_KEYWORDS = [
     "pba game",
 ]
 
-# General context keywords — used for disambiguation
 GENERAL_RELEVANT_KEYWORDS = [
     "school",
     "university",
@@ -265,7 +225,6 @@ GENERAL_RELEVANT_KEYWORDS = [
     "event",
 ]
 
-# Suspension-like patterns (broader than just "suspend")
 SUSPENSION_PATTERN = re.compile(
     r"\b(suspend(?:ed|ion|ing)?|suspens(?:ion|yon|yo)?|suspenso|suspendido"
     r"|cancel(?:led|lation)?|postpone(?:d|ment)?|closure|closed|walang|tigil"
@@ -273,7 +232,6 @@ SUSPENSION_PATTERN = re.compile(
     re.I,
 )
 
-# Context that confirms a suspension/event is relevant to LRT ridership
 SUSPENSION_CONTEXT_KEYWORDS = [
     "lrt",
     "mrt",
@@ -289,7 +247,6 @@ SUSPENSION_CONTEXT_KEYWORDS = [
     "suspensiyon",
     "istasyon",
     "tren",
-    # New
     "arena",
     "concert",
     "jeepney",
@@ -303,163 +260,38 @@ SUSPENSION_CONTEXT_KEYWORDS = [
     "city",
 ]
 
-WEEKDAY_ALIASES = {
-    "monday": 0,
-    "lunes": 0,
-    "tuesday": 1,
-    "martes": 1,
-    "wednesday": 2,
-    "miyerkules": 2,
-    "huwebes": 3,
-    "thursday": 3,
-    "friday": 4,
-    "biyernes": 4,
-    "saturday": 5,
-    "sabado": 5,
-    "sunday": 6,
-    "linggo": 6,
-}
-
-
-def weekday_age_days(match) -> float:
-    weekday = WEEKDAY_ALIASES[match.group(1).lower()]
-    today = datetime.now().weekday()
-    return float((today - weekday) % 7)
-
-
-MONTH_MAP = {
-    "january": 1, "enero": 1,
-    "february": 2, "pebrero": 2,
-    "march": 3, "marso": 3,
-    "april": 4, "abril": 4,
-    "may": 5, "mayo": 5,
-    "june": 6, "hunyo": 6,
-    "july": 7, "hulyo": 7,
-    "august": 8, "agosto": 8,
-    "september": 9, "setyembre": 9,
-    "october": 10, "oktubre": 10,
-    "november": 11, "nobyembre": 11,
-    "december": 12, "disyembre": 12,
-}
-
-MONTHS_REGEX = r"(January|February|March|April|May|June|July|August|September|October|November|December|Enero|Pebrero|Marso|Abril|Mayo|Hunyo|Hulyo|Agosto|Setyembre|Oktubre|Nobyembre|Disyembre)"
-
-DATE_PATTERNS = [
-    (re.compile(r"\b(\d+)\s*m\b", re.I), lambda m: int(m.group(1)) / 60 / 24),
-    (re.compile(r"\b(\d+)\s*h\b", re.I), lambda m: int(m.group(1)) / 24),
-    (re.compile(r"\b(\d+)\s*d\b", re.I), lambda m: int(m.group(1))),
-    (re.compile(r"(\d+)\s+minutes?\s+ago", re.I), lambda m: int(m.group(1)) / 60 / 24),
-    (re.compile(r"(\d+)\s+hours?\s+ago", re.I), lambda m: int(m.group(1)) / 24),
-    (re.compile(r"(\d+)\s+days?\s+ago", re.I), lambda m: int(m.group(1))),
-    (re.compile(r"(\d+)\s+minuto(?:\s+ang\s+nakalipas)?", re.I), lambda m: int(m.group(1)) / 60 / 24),
-    (re.compile(r"(\d+)\s+oras(?:\s+ang\s+nakalipas)?", re.I), lambda m: int(m.group(1)) / 24),
-    (re.compile(r"(\d+)\s+araw(?:\s+ang\s+nakalipas)?", re.I), lambda m: int(m.group(1))),
-    (re.compile(r"Yesterday", re.I), lambda m: 1.0),
-    (re.compile(r"Today", re.I), lambda m: 0.0),
-    (re.compile(r"Kahapon", re.I), lambda m: 1.0),
-    (re.compile(r"Ngayon", re.I), lambda m: 0.0),
-    (re.compile(r"(?:noong\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday|lunes|martes|miyerkules|huwebes|biyernes|sabado|linggo)", re.I), weekday_age_days),
-    (re.compile(rf"{MONTHS_REGEX}\s+(\d{{1,2}}),\s*(\d{{4}})", re.I), None),
-    (re.compile(rf"(\d{{1,2}})\s+(?:ng\s+)?{MONTHS_REGEX}(?:\s+at\s+\d{{1,2}}:\d{{2}})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, MONTH_MAP.get(m.group(2).lower(), 1), int(m.group(1)))).days)),
-    (re.compile(rf"{MONTHS_REGEX}\s+(\d{{1,2}})(?:\s+at\s+\d{{1,2}}:\d{{2}})?", re.I), lambda m: max(0.0, (datetime.utcnow() - datetime(datetime.utcnow().year, MONTH_MAP.get(m.group(1).lower(), 1), int(m.group(2)))).days)),
-]
-
-
-def parse_age_days(text: str) -> float | None:
-    if not text:
-        return None
-    for pattern, converter in DATE_PATTERNS:
-        m = pattern.search(text)
-        if m:
-            if converter is None:
-                month_name = m.group(1).lower()
-                day = int(m.group(2))
-                year = int(m.group(3))
-                try:
-                    month = MONTH_MAP.get(month_name, 1)
-                    post_date = datetime(year, month, day)
-                    return max(0.0, (datetime.utcnow() - post_date).days)
-                except Exception:
-                    continue
-            try:
-                return converter(m)
-            except Exception:
-                continue
-    return None
-
-
-def extract_post_age(soup: BeautifulSoup) -> float | None:
-    patterns = [re.compile(r"(\d+)\s+minutes?\s+ago", re.I),
-                re.compile(r"(\d+)\s+hours?\s+ago", re.I),
-                re.compile(r"(\d+)\s+days?\s+ago", re.I),
-                re.compile(r"Yesterday", re.I),
-                re.compile(r"Today", re.I),
-                re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s*(\d{4})", re.I)]
-    for string in soup.stripped_strings:
-        age = parse_age_days(string)
-        if age is not None:
-            return age
-    return None
-
-
-# Regex to match emoji and other non-text Unicode symbols (excluding 0x1D400-0x1D7FF Mathematical Alphanumerics)
 EMOJI_PATTERN = re.compile(
     "["
-    "\U0001F600-\U0001F64F"  # emoticons
-    "\U0001F300-\U0001F5FF"  # symbols & pictographs
-    "\U0001F680-\U0001F6FF"  # transport & map symbols
-    "\U0001F1E0-\U0001F1FF"  # flags
-    "\U00002702-\U000027B0"  # dingbats
-    "\U000024C2-\U000024E9"  # circled letters/digits
-    "\U0001F100-\U0001F251"  # enclosed supplements (excluding math 0x1D400-0x1D7FF)
-    "\U0001F900-\U0001F9FF"  # supplemental symbols
-    "\U0001FA00-\U0001FA6F"  # chess symbols
-    "\U0001FA70-\U0001FAFF"  # symbols extended-A
-    "\U00002600-\U000026FF"  # misc symbols
-    "\U0000FE00-\U0000FE0F"  # variation selectors
-    "\U0000200D"             # zero width joiner
-    "\U00002B50"             # star
-    "\U000023F0-\U000023FA"  # misc technical
-    "\U0000203C-\U00003299"  # misc symbols
+    "\U0001F600-\U0001F64F"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F1E0-\U0001F1FF"
+    "\U00002702-\U000027B0"
+    "\U000024C2-\U000024E9"
+    "\U0001F100-\U0001F251"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "\U00002600-\U000026FF"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "\U00002B50"
+    "\U000023F0-\U000023FA"
+    "\U0000203C-\U00003299"
     "]+",
     flags=re.UNICODE,
 )
 
-# Patterns that indicate a social-media footer line (logos, handles, URLs)
 FOOTER_LINE_PATTERN = re.compile(
     r"(#\w+|@\w+|www\.|https?://|\.edu\.ph|\.gov\.ph|\.com\.ph|\.facebook\.|f\s*[|/]\s*@|chooseSAN|#choose)",
     re.IGNORECASE,
 )
 
-
-def is_content_image(img_tag, src: str) -> bool:
-    """Filter out small avatar profile icons, badges, and thumbnail logos."""
-    if not src or "scontent" not in src:
-        return False
-    # Check url patterns for avatar/profile dimensions
-    if any(dim in src for dim in ("50x50", "32x32", "24x24", "40x40", "16x16", "c0.0.50.50", "p50x50", "s50x50")):
-        return False
-    # Check width/height attributes if present
-    w = img_tag.get("width")
-    h = img_tag.get("height")
-    if w and str(w).isdigit() and int(w) < 120:
-        return False
-    if h and str(h).isdigit() and int(h) < 120:
-        return False
-    # Check alt tags / classes
-    alt = (img_tag.get("alt") or "").lower()
-    if "profile picture" in alt or "avatar" in alt:
-        return False
-    return True
-
-
 def strip_emojis(text: str) -> str:
-    """Remove emoji characters from text."""
     return EMOJI_PATTERN.sub("", text)
 
-
 def clean_ocr_text(text: str) -> str:
-    text = normalize_unicode_text(text)  # Convert stylized Unicode fonts to plain ASCII first
+    text = normalize_unicode_text(text)
     text = strip_emojis(text)
     text = re.sub(r"[^\S\r\n]+", " ", text)
     text = re.sub(r"\s*\n\s*", "\n", text)
@@ -469,7 +301,6 @@ def clean_ocr_text(text: str) -> str:
         cleaned = line.strip(" -_|•·")
         if len(cleaned) < 3:
             continue
-        # Skip footer-like lines (social handles, URLs, hashtags)
         if FOOTER_LINE_PATTERN.search(cleaned):
             continue
         key = cleaned.lower()
@@ -479,68 +310,48 @@ def clean_ocr_text(text: str) -> str:
         lines.append(cleaned)
     return " ".join(lines)
 
-
 def strip_social_boilerplate(text: str) -> str:
-    """Strip social media headers, reaction counts, share counters, and trailing UI text."""
     if not text:
         return ""
-    # Strip top author header like 'Page Name Verified account 4h · Shared with Public'
     cleaned = re.sub(r"^.*?·\s*Shared with (?:Public|Friends)\s*", "", text, flags=re.IGNORECASE)
     cleaned = re.sub(r"All reactions:.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
     cleaned = re.sub(r"\b\d+\s+reactions?\b.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
     cleaned = re.sub(r"\b\d+\s+shares?\b.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
     return cleaned.strip()
 
-
 def clean_caption_text(text: str) -> str:
-    """Strip emojis, social boilerplate, and normalize whitespace from post caption text."""
     text = strip_social_boilerplate(text)
-    text = normalize_unicode_text(text)  # Convert stylized Unicode fonts to plain ASCII first
+    text = normalize_unicode_text(text)
     text = strip_emojis(text)
     text = re.sub(r"\s*(?:See more|Tumingin pa|Read more)\s*[…\.]*$", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-
 def is_relevant_event(text: str, image_text: str = "") -> bool:
-    """
-    Return True if the combined text likely refers to a relevant LRT ridership-
-    affecting event: class suspensions, LGU advisories, transport disruptions,
-    arena/concert events, or academic calendar events.
-
-    Uses .casefold() for case-insensitive matching — handles ALL CAPS, Title
-    Case, lowercase, and mixed-case Filipino Facebook posts equally.
-    """
     combined = (text or "") + " " + (image_text or "")
     if not combined.strip():
         return False
 
-    # Normalize decorative Unicode fonts (bold, italic, script, etc.) to plain ASCII
     combined = normalize_unicode_text(combined)
     lowered = combined.casefold()
 
-    # Reject generic calendar-title posts (not actionable events)
     calendar_titles = [
         "academic calendar",
         "school calendar",
         "collegiate calendar",
         "university calendar",
     ]
-    # Only reject if it's ONLY a calendar title post (no suspension/event context)
     if any(kw in lowered for kw in calendar_titles):
-        # Still allow if it also contains actionable keywords
         has_action = any(kw.casefold() in lowered for kw in [
             "no classes", "suspended", "walang pasok", "holiday", "holiday break"
         ])
         if not has_action:
             return False
 
-    # Accept immediately on any strong keyword match (case-insensitive)
     for kw in STRONG_RELEVANT_KEYWORDS:
         if kw.casefold() in lowered:
             return True
 
-    # For posts with a suspension/event signal word, check for context
     if SUSPENSION_PATTERN.search(lowered):
         for kw in SUSPENSION_CONTEXT_KEYWORDS + GENERAL_RELEVANT_KEYWORDS:
             if kw.casefold() in lowered:
@@ -548,97 +359,15 @@ def is_relevant_event(text: str, image_text: str = "") -> bool:
 
     return False
 
-
-def is_truncated(text: str) -> bool:
-    """Check if caption text ends abruptly or contains Facebook 'See More' / ellipsis truncation."""
-    if not text:
-        return False
-    t = text.strip().casefold()
-    truncation_patterns = [
-        "see more", "tumingin pa", "read more", "see less",
-        "...", "\u2026", "at al…", "al…", "see more…", "tumingin pa…"
-    ]
-    return any(t.endswith(p) or f" {p}" in t for p in truncation_patterns)
-
-
-def get_ancestor(el, levels: int):
-    current = el
-    for _ in range(levels):
-        if current is None or current.parent is None:
-            break
-        current = current.parent
-    return current
-
-
-def get_post_header_text(el, caption_text: str, max_levels: int = 3) -> str:
-    current = el.parent
-    normalized_caption = " ".join((caption_text or "").split())
-    for _ in range(max_levels):
-        if current is None:
-            break
-        ancestor_text = " ".join(current.get_text(" ", strip=True).split())
-        if normalized_caption and normalized_caption in ancestor_text:
-            header_text = ancestor_text.split(normalized_caption, 1)[0].strip()
-            if header_text:
-                return header_text
-        current = current.parent
-    return ""
-
-
-def is_video_post(el, levels: int = 4) -> bool:
-    """Check if this post is an actual video/reel element (avoid false positives from caption links)."""
-    container = get_ancestor(el, levels)
-    if container is None:
-        return False
-    if container.find("video"):
-        return True
-    return False
-
-
-def find_ancestor_with_link(el, max_levels: int = 12, expected_page_url: str | None = None):
-    current = el
-    for _ in range(max_levels):
-        if current is None:
-            break
-        for a in current.find_all("a", {"href": True}, limit=50):
-            href = a["href"]
-            cleaned_href = clean_url(href)
-            if is_valid_facebook_post_url(cleaned_href, expected_page_url):
-                return href
-        current = current.parent
-    return None
-
-
-def clean_url(href: str, prefer_mbasic: bool = False) -> str:
+def clean_url(href: str) -> str:
     if not href:
         return ""
-    if href.startswith("/"):
-        host = "mbasic.facebook.com" if prefer_mbasic else "www.facebook.com"
-        href = f"https://{host}" + href
-    # normalize and strip tracking params
     return href.split("&")[0].split("?__cft__")[0]
 
-
-def _facebook_page_slug(page_url: str | None) -> str | None:
-    if not page_url:
-        return None
-    parsed = urlparse(canonical_facebook_url(page_url))
-    path_parts = [part for part in parsed.path.casefold().split("/") if part]
-    if not path_parts or path_parts[0] == "profile.php":
-        return None
-    return path_parts[0]
-
-
 def is_valid_facebook_post_url(href: str, expected_page_url: str | None = None) -> bool:
-    """Accept only real Facebook post/photo/story URLs from trusted pages.
-
-    Personal profiles, people links, comment/reply links, videos, and reels are
-    intentionally rejected so they cannot be saved as source_url.
-    """
     cleaned = clean_url(href)
     if not cleaned:
         return False
-
     parsed = urlparse(cleaned)
     host = parsed.netloc.casefold()
     path = parsed.path.casefold()
@@ -647,335 +376,184 @@ def is_valid_facebook_post_url(href: str, expected_page_url: str | None = None) 
 
     if "facebook.com" not in host:
         return False
-
-    if "plugins/page.php" in combined:
-        return False
-
     if any(blocked in path for blocked in PERSONAL_OR_UNSAFE_FACEBOOK_PATHS):
         return False
-
     if "comment_id=" in query or "reply_comment_id=" in query:
         return False
-
     if not PERMALINK_PATTERN.search(combined):
         return False
-
-    expected_slug = _facebook_page_slug(expected_page_url)
-    path_parts = [part for part in path.split("/") if part]
-    if expected_slug and len(path_parts) >= 2 and path_parts[1] in {"posts", "photos"}:
-        return path_parts[0] == expected_slug
-
     return True
 
-
-def canonical_facebook_url(page_url: str) -> str:
-    return page_url.replace("mbasic.facebook.com", "www.facebook.com").replace("m.facebook.com", "www.facebook.com")
-
-
-def facebook_plugin_url(page_url: str) -> str:
-    canonical_url = canonical_facebook_url(page_url)
-    encoded_url = quote(canonical_url, safe="")
-    return (
-        "https://www.facebook.com/plugins/page.php"
-        f"?href={encoded_url}"
-        "&tabs=timeline"
-        "&width=500"
-        "&height=1000"
-        "&small_header=false"
-        "&adapt_container_width=true"
-        "&hide_cover=false"
-        "&show_facepile=false"
-    )
-
-
+# --- Backward-compatible helper stubs for calendar_scraper / legacy callers ---
 def candidate_page_urls(page_url: str) -> list[str]:
-    candidates = [facebook_plugin_url(page_url), canonical_facebook_url(page_url)]
-    unique_candidates = []
-    for candidate in candidates:
-        if candidate not in unique_candidates:
-            unique_candidates.append(candidate)
-    return unique_candidates
-
+    return [page_url]
 
 def click_see_more_buttons(page, max_clicks: int = 8):
-    """Expand inline 'See more' / 'Tumingin pa' buttons with humanized Playwright clicks."""
-    try:
-        locators = page.locator("text=/^\\s*(See more|Tumingin pa|Read more)\\s*$/i")
-        count = min(locators.count(), max_clicks)
-        for i in range(count):
-            try:
-                loc = locators.nth(i)
-                if loc.is_visible():
-                    loc.click(timeout=1000, delay=random.randint(60, 160))
-                    time.sleep(random.uniform(0.15, 0.35))
-            except Exception:
-                continue
-    except Exception:
-        pass
-
+    pass
 
 def normalize_playwright_cookies(cookies: list) -> list:
-    """Ensure cookie entries are valid strings for Playwright's add_cookies."""
-    out = []
-    if not cookies:
-        return out
-    for c in cookies:
-        try:
-            name = c.get("name") if isinstance(c, dict) else None
-            value = c.get("value") if isinstance(c, dict) else None
-            if not name or value is None:
-                continue
-            value_str = value if isinstance(value, str) else str(value)
-            domain = c.get("domain") or ".facebook.com"
-            path = c.get("path") or "/"
+    return []
 
-            out.append({
-                "name": name,
-                "value": value_str,
-                "domain": domain,
-                "path": path,
-            })
-        except Exception:
-            continue
-    return out
+def get_ancestor(el, levels: int):
+    return getattr(el, "parent", None)
 
+def find_ancestor_with_link(el, max_levels: int = 12, expected_page_url: str | None = None):
+    return None
+
+def parse_age_days(text: str) -> float | None:
+    return None
+
+def is_truncated(text: str) -> bool:
+    return False
+
+def get_post_header_text(el, caption_text: str, max_levels: int = 3) -> str:
+    return ""
+
+def is_video_post(el, levels: int = 4) -> bool:
+    return False
 
 def _block_unnecessary_resources(route, request):
-    """Block heavy media to speed up loads without aborting core Facebook telemetry."""
-    resource_type = request.resource_type
-    if resource_type in ("font", "media"):
-        route.abort()
-        return
-    route.continue_()
+    pass
 
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-]
-
-
+# ---------------------------------------------------------------------------
+# Core Apify Scraper Engine
+# ---------------------------------------------------------------------------
 def scrape_page(
     page_url: str,
-    cookies: list,
+    cookies: list = None,
     existing_urls: set = None,
-    max_scrolls: int = 8,
+    max_scrolls: int = 6,
     max_age_days: float = 14.0,
     max_ocr_per_page: int = 25,
+    results_limit: int = 6,
 ) -> list[dict]:
     """
-    Scrape a single Facebook page for relevant events.
-
+    Scrape a single Facebook page for relevant events using Apify.
+    
     Args:
-        page_url:          Facebook page URL to scrape.
-        cookies:           Authenticated Facebook cookies (empty list for public unauth mode).
-        existing_urls:     Set of already-known post URLs to skip (dedup).
-        max_scrolls:       How many times to scroll down per surface (default 8).
-        max_age_days:      Hard cutoff — posts older than this are skipped
-                           immediately without OCR or LLM calls. Default 7 days.
-        max_ocr_per_page:  Max total Gemini Vision OCR calls across the whole page
-                           to prevent quota exhaustion on busy pages. Default 10.
+        page_url: Facebook page URL.
+        cookies: (Deprecated, unused with Apify).
+        existing_urls: Set of known post URLs to skip.
+        max_scrolls: Unused legacy parameter.
+        max_age_days: Cutoff threshold in days.
+        max_ocr_per_page: Max images to OCR per page.
+        results_limit: Number of latest posts to fetch.
     """
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+    
+    token = os.getenv("APIFY_API_TOKEN")
+    if not token:
+        print("  Error: APIFY_API_TOKEN not found in environment!")
+        return []
+
+    client = ApifyClient(token)
+    run_input = {
+        "startUrls": [{"url": page_url}],
+        "resultsLimit": results_limit,
+    }
+
+    try:
+        run = client.actor("apify/facebook-posts-scraper").call(run_input=run_input)
+        if not run:
+            print(f"  Apify run failed for {page_url}")
+            return []
+
+        dataset_items = list(client.dataset(run.default_dataset_id).iterate_items())
+    except Exception as e:
+        print(f"  Apify call failed on {page_url}: {e}")
+        return []
+
+    now = datetime.now(timezone.utc)
     posts = []
-    page_ocr_count = 0  # tracks total OCR calls for this page
-    chosen_ua = random.choice(USER_AGENTS)
+    page_ocr_count = 0
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-            ]
-        )
-        ctx = browser.new_context(
-            user_agent=chosen_ua,
-            viewport={"width": 1920, "height": 1080},
-            locale="en-PH",
-            timezone_id="Asia/Manila",
-            java_script_enabled=True,
-        )
-        norm = normalize_playwright_cookies(cookies)
-        has_auth_cookies = bool(norm)
-        if not norm:
-            print("  Note: Running in unauthenticated public fallback mode (no cookies).")
-        else:
+    for item in dataset_items:
+        post_url = item.get("url") or item.get("topLevelUrl") or ""
+        post_url = clean_url(post_url) if post_url else ""
+
+        if not is_valid_facebook_post_url(post_url, page_url):
+            # Still check topLevelUrl if url is a share link
+            top_url = item.get("topLevelUrl")
+            if top_url and is_valid_facebook_post_url(clean_url(top_url), page_url):
+                post_url = clean_url(top_url)
+
+        if existing_urls and post_url in existing_urls:
+            continue
+
+        # Parse post timestamp / age
+        post_age_days = None
+        iso_time = item.get("time")
+        timestamp = item.get("timestamp")
+        if iso_time:
             try:
-                ctx.add_cookies(norm)
-            except Exception as e:
-                print(f"  Warning: add_cookies failed: {e}")
-        page = ctx.new_page()
+                dt = datetime.fromisoformat(iso_time.replace("Z", "+00:00"))
+                post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+            except Exception:
+                pass
+        elif timestamp:
+            try:
+                dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+            except Exception:
+                pass
 
-        # Block unnecessary resources to speed up page loads
-        page.route("**/*", _block_unnecessary_resources)
+        if post_age_days is not None and post_age_days > max_age_days:
+            print(f"  Skipped old post ({post_age_days:.1f}d > {max_age_days}d limit).")
+            continue
 
-        try:
-            for target_url in candidate_page_urls(page_url):
-                posts_before_surface = len(posts)
-                print(f"  Opening: {target_url}")
-                try:
-                    page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
-                except Exception as e:
-                    print(f"  Surface failed: {e}")
-                    continue
-                time.sleep(random.uniform(2.5, 4.0))
+        caption_text = item.get("text") or ""
+        caption_text = clean_caption_text(caption_text)
 
-                # Check for login wall — cookies expired / account checkpointed
-                try:
-                    is_login_url = "/login" in page.url.lower() or "checkpoint" in page.url.lower()
-                    has_hard_wall = page.locator("text=You must log in to continue").count() > 0 or page.locator("text=Log in to Facebook to see this page").count() > 0
-                    
-                    if (is_login_url or has_hard_wall) and has_auth_cookies:
-                        print(f"  Login wall detected on {target_url}! Cookies likely expired.")
-                        browser.close()
-                        return [{"_cookie_expired": True}]
-                    elif is_login_url or has_hard_wall:
-                        print(f"  Unauth surface encountered login wall on {target_url}. Trying next candidate...")
-                        continue
-                except Exception:
-                    pass
+        # Extract image text via OCR
+        image_text = ""
+        media_list = item.get("media") or []
+        for m in media_list:
+            if page_ocr_count >= max_ocr_per_page:
+                break
+            img_uri = None
+            if isinstance(m, dict):
+                photo_img = m.get("photo_image")
+                if isinstance(photo_img, dict) and photo_img.get("uri"):
+                    img_uri = photo_img.get("uri")
+                elif m.get("thumbnail"):
+                    img_uri = m.get("thumbnail")
+                elif m.get("url") and "facebook.com/photo" not in m.get("url"):
+                    img_uri = m.get("url")
 
-                click_see_more_buttons(page)
+                fb_ocr = m.get("ocrText") or ""
+            else:
+                fb_ocr = ""
 
-                surface_success = False
+            if img_uri:
+                ocr_res = extract_text_from_image(img_uri)
+                if ocr_res:
+                    image_text += " " + ocr_res
+                    page_ocr_count += 1
+                elif fb_ocr:
+                    cleaned_fb_ocr = clean_ocr_text(fb_ocr)
+                    if cleaned_fb_ocr:
+                        image_text += " " + cleaned_fb_ocr
 
-                for i in range(max_scrolls):
-                    print(f"  Scrolling... ({i + 1}/{max_scrolls})")
+        if caption_text or image_text:
+            cleaned_text = caption_text
+            if not cleaned_text and image_text:
+                cleaned_text = "Official Advisory / Announcement (Infographic)"
 
-                    # Expand visible captions inline before reading DOM
-                    click_see_more_buttons(page)
-
-                    try:
-                        html_content = page.content()
-                    except Exception as e:
-                        if "navigating" in str(e).lower():
-                            try:
-                                page.wait_for_load_state("domcontentloaded", timeout=10000)
-                                html_content = page.content()
-                            except Exception:
-                                continue
-                        else:
-                            continue
-
-                    soup = BeautifulSoup(html_content, "html.parser")
-
-                    # Support multiple message selectors: plugin timeline, standard www, and legacy surfaces
-                    message_elements = []
-                    try:
-                        message_elements.extend(soup.find_all("div", {"class": re.compile(r"story_body|story|_5pbx")}))
-                    except Exception:
-                        pass
-                    message_elements.extend(soup.find_all("div", {"data-ad-preview": "message"}))
-                    message_elements.extend(soup.find_all("div", {"role": "article"}))
-
-                    if message_elements:
-                        surface_success = True
-
-                    for el in message_elements:
-
-                        if is_video_post(el):
-                            continue
-
-                        caption_text = el.get_text(separator=" ", strip=True)
-
-                        href = find_ancestor_with_link(el, expected_page_url=page_url)
-                        post_url = clean_url(href) if href else ""
-
-                        if not is_valid_facebook_post_url(post_url, page_url):
-                            continue
-
-                        if existing_urls and post_url in existing_urls:
-                            continue
-
-                        # --- EARLY AGE CHECK (before any expensive calls) ---
-                        age_source_text = get_post_header_text(el, caption_text)
-                        post_age_days = parse_age_days(age_source_text) or parse_age_days(caption_text)
-                        
-                        # Hard cutoff: skip posts definitively older than max_age_days
-                        if post_age_days is not None and post_age_days > max_age_days:
-                            print(f"  Skipped old post ({post_age_days:.1f}d > {max_age_days}d limit).")
-                            continue
-
-                        # --- CAPTION KEYWORD PRE-CHECK ---
-                        caption_passes = is_relevant_event(caption_text)
-
-                        # Strip leftover "See more"/"Tumingin pa" artifact
-                        for suffix in ["see more", "tumingin pa"]:
-                            if caption_text.lower().endswith(suffix):
-                                caption_text = caption_text[: -len(suffix)].rstrip(". ").strip()
-
-                        # --- OCR: Run on post images if OCR budget is available ---
-                        image_text = ""
-                        if page_ocr_count < max_ocr_per_page:
-                            # Search for images directly inside `el` (for image-only posts) AND in container
-                            candidate_img_tags = []
-                            if hasattr(el, "find_all"):
-                                candidate_img_tags.extend(el.find_all("img", {"src": True}))
-                            image_container = get_ancestor(el, 3)
-                            if image_container and hasattr(image_container, "find_all"):
-                                candidate_img_tags.extend(image_container.find_all("img", {"src": True}))
-
-                            seen_images = set()
-                            ocr_count = 0
-                            for img in candidate_img_tags:
-                                if ocr_count >= 3 or page_ocr_count >= max_ocr_per_page:
-                                    break
-                                src = img.get("src", "") or img.get("data-src", "")
-                                if src and src not in seen_images and is_content_image(img, src):
-                                    seen_images.add(src)
-                                    ocr_result = extract_text_from_image(src)
-                                    if ocr_result:
-                                        image_text += " " + ocr_result
-                                    ocr_count += 1
-                                    page_ocr_count += 1
-                            if ocr_count > 0:
-                                print(f"  OCR processed {ocr_count} image(s) [page budget: {page_ocr_count}/{max_ocr_per_page}]")
-
-                        if caption_text or image_text:
-                            # Final relevance check with all text combined
-                            if not is_relevant_event(caption_text, image_text):
-                                continue
-
-                            cleaned_text = clean_caption_text(caption_text)
-                            if not cleaned_text and image_text:
-                                cleaned_text = "Official Advisory / Announcement (Infographic)"
-
-                            posts.append({
-                                "text": cleaned_text,
-                                "image_text": image_text.strip(),
-                                "source_url": post_url,
-                                "age_days": post_age_days
-                            })
-
-                    try:
-                        page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
-                    except Exception as e:
-                        if "navigation" in str(e).lower() or "context was destroyed" in str(e).lower():
-                            print("  Navigation detected during scroll. Stopping scroll.")
-                            break
-                        else:
-                            print(f"  Warning: Scroll failed ({e})")
-                    time.sleep(random.uniform(2.0, 3.5))
-
-                if surface_success:
-                    print("  Timeline loaded successfully. Skipping fallback surface.")
-                    break
-
-        except Exception as e:
-            print(f"  Error on {page_url}: {e}")
-
-        finally:
-            browser.close()
+            posts.append({
+                "text": cleaned_text,
+                "image_text": image_text.strip(),
+                "source_url": post_url or page_url,
+                "age_days": post_age_days,
+            })
 
     seen = set()
     unique_posts = []
-    for post in posts:
-        if post["text"] not in seen:
-            seen.add(post["text"])
-            unique_posts.append(post)
+    for p in posts:
+        if p["text"] not in seen:
+            seen.add(p["text"])
+            unique_posts.append(p)
 
-    print(f"  Found {len(unique_posts)} unique posts")
+    print(f"  Found {len(unique_posts)} relevant unique posts")
     return unique_posts

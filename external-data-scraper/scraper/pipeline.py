@@ -2,16 +2,13 @@ import json
 import os
 import re
 import sys
-import time
-import random
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from auth import get_all_cookie_profiles_labeled
 from fb_scraper import scrape_page, is_valid_facebook_post_url
 from keywords import classify_post
 from llm_classifier import classify_post_llm
-from email_notifier import send_pipeline_alert, send_cookie_alert
+from email_notifier import send_pipeline_alert
 
 # Fix Windows console encoding crash on special characters (e.g. arrows, checkmarks)
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
@@ -228,98 +225,21 @@ def run_pipeline(batch: str = "all"):
     except Exception as e:
         print(f"Warning: Could not fetch existing data from database: {e}")
 
-    batch_clean = (batch or "all").strip().lower()
-    if batch_clean in ("westbound", "west", "b"):
-        jitter = random.uniform(20.0, 35.0)
-        print(f"Applying startup stagger jitter for {batch.upper()} batch: waiting {jitter:.1f}s to prevent concurrent login collisions...")
-        time.sleep(jitter)
-
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
-    # Load batch-dedicated cookie profiles (with labels) for rotation
-    cookie_profiles = get_all_cookie_profiles_labeled(batch=batch)
-    if not cookie_profiles:
-        print("Warning: No FB cookie profiles found. Running in unauthenticated public fallback mode.")
-        cookie_profiles = [{"cookies": [], "label": "None (Public Unauth)", "env_suffix": ""}]
-
     total_saved = 0
     newly_saved_events = []
-    expired_accounts = []  # Track which accounts hit login walls
 
     for page_idx, page in enumerate(pages):
-        # Pacing delay between pages (except first page) to avoid rapid-fire bot signatures
-        if page_idx > 0:
-            pacing_delay = random.uniform(12.0, 22.0)
-            print(f"  Pacing delay before next page: sleeping {pacing_delay:.1f}s...")
-            time.sleep(pacing_delay)
-
         print(f"\n[{page_idx + 1}/{len(pages)}] Scraping: {page['name']} ({page['station']}) — Batch {page.get('batch','?')}")
-
-        # Rotate cookie profiles across pages
-        profile = cookie_profiles[page_idx % len(cookie_profiles)]
-        cookies = profile["cookies"]
-
-        # Respect per-page max_scrolls override (e.g. low-activity pages)
-        page_max_scrolls = page.get("max_scrolls", DEFAULT_MAX_SCROLLS)
 
         posts = scrape_page(
             page["url"],
-            cookies,
             existing_urls=existing_urls,
-            max_scrolls=page_max_scrolls,
             max_age_days=MAX_AGE_DAYS,
+            results_limit=5,
         )
-
-        # Check if cookies expired (login wall detected)
-        if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
-            account_info = {"account_label": profile["label"], "env_suffix": profile["env_suffix"]}
-            if account_info not in expired_accounts:
-                expired_accounts.append(account_info)
-                send_cookie_alert([account_info], scraper_name="Events Pipeline")
-            print(f"  Cookie expired for {profile['label']}! Trying next account...")
-
-            # Try remaining profiles for this page
-            recovered = False
-            for fallback_idx, fallback_profile in enumerate(cookie_profiles):
-                if fallback_profile["label"] == profile["label"]:
-                    continue  # skip the one that just failed
-                fallback_info = {"account_label": fallback_profile["label"], "env_suffix": fallback_profile["env_suffix"]}
-                if fallback_info in expired_accounts:
-                    continue  # skip already-expired accounts
-
-                print(f"  Retrying with {fallback_profile['label']}...")
-                time.sleep(random.uniform(5.0, 10.0))
-                posts = scrape_page(
-                    page["url"],
-                    fallback_profile["cookies"],
-                    existing_urls=existing_urls,
-                    max_scrolls=page_max_scrolls,
-                    max_age_days=MAX_AGE_DAYS,
-                )
-                if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
-                    if fallback_info not in expired_accounts:
-                        expired_accounts.append(fallback_info)
-                        send_cookie_alert([fallback_info], scraper_name="Events Pipeline")
-                    print(f"  Cookie also expired for {fallback_profile['label']}!")
-                    continue
-                else:
-                    recovered = True
-                    break
-
-            if not recovered:
-                print(f"  All cookie accounts hit login challenges. Attempting unauthenticated public fallback for {page['name']}...")
-                time.sleep(random.uniform(3.0, 6.0))
-                posts = scrape_page(
-                    page["url"],
-                    cookies=[],
-                    existing_urls=existing_urls,
-                    max_scrolls=page_max_scrolls,
-                    max_age_days=MAX_AGE_DAYS,
-                )
-                if posts and isinstance(posts[0], dict) and posts[0].get("_cookie_expired"):
-                    print(f"  Public fallback also blocked. Skipping page: {page['name']}")
-                    continue
 
         for post in posts:
             post_age_days = post.get("age_days")

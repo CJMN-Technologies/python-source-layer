@@ -36,19 +36,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Cache Playwright Chromium
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('external-data-scraper/scraper/requirements.txt') }}
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r external-data-scraper/scraper/requirements.txt
-          playwright install chromium
-          playwright install-deps chromium
 
       - name: Determine Batch
         id: batch_select
@@ -72,26 +63,7 @@ jobs:
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2:  ${{ secrets.GEMINI_API_KEY_2 }}
           GEMINI_API_KEY_3:  ${{ secrets.GEMINI_API_KEY_3 }}
-          FB_C_USER:         ${{ secrets.FB_C_USER }}
-          FB_XS:             ${{ secrets.FB_XS }}
-          FB_DATR:           ${{ secrets.FB_DATR }}
-          FB_FR:             ${{ secrets.FB_FR }}
-          FB_SB:             ${{ secrets.FB_SB }}
-          FB_C_USER_1:       ${{ secrets.FB_C_USER_1 }}
-          FB_XS_1:           ${{ secrets.FB_XS_1 }}
-          FB_DATR_1:         ${{ secrets.FB_DATR_1 }}
-          FB_FR_1:           ${{ secrets.FB_FR_1 }}
-          FB_SB_1:           ${{ secrets.FB_SB_1 }}
-          FB_C_USER_2:       ${{ secrets.FB_C_USER_2 }}
-          FB_XS_2:           ${{ secrets.FB_XS_2 }}
-          FB_DATR_2:         ${{ secrets.FB_DATR_2 }}
-          FB_FR_2:           ${{ secrets.FB_FR_2 }}
-          FB_SB_2:           ${{ secrets.FB_SB_2 }}
-          FB_C_USER_3:       ${{ secrets.FB_C_USER_3 }}
-          FB_XS_3:           ${{ secrets.FB_XS_3 }}
-          FB_DATR_3:         ${{ secrets.FB_DATR_3 }}
-          FB_FR_3:           ${{ secrets.FB_FR_3 }}
-          FB_SB_3:           ${{ secrets.FB_SB_3 }}
+          APIFY_API_TOKEN:   ${{ secrets.APIFY_API_TOKEN }}
           SENDER_EMAIL:      ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD:   ${{ secrets.SENDER_PASSWORD }}
           RECEIVER_EMAIL:    ${{ secrets.RECEIVER_EMAIL }}
