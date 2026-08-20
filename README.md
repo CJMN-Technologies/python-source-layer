@@ -44,7 +44,7 @@ This avoids one huge README while still giving each teammate the context they ne
 | Supabase REST client | `supabase-py` |
 | Direct PostgreSQL client | `psycopg2-binary` |
 | Data processing | `pandas`, `openpyxl` |
-| Web scraping | Playwright (headless Chromium), BeautifulSoup, Requests |
+| Web scraping & Social Ingestion | Apify Cloud Client (`apify-client`), Requests, BeautifulSoup |
 | OCR & Image text extraction | Google Gemini 2.0 Flash (`google-genai`) with Pillow and NumPy for image pre-processing |
 | LLM Classification | Google Gemini 2.0 Flash (`google-genai`) with Pydantic structured output |
 | Unicode normalization | Custom mapper for decorative Facebook text (Mathematical Bold, Script, Double-Struck, etc.) |
@@ -55,9 +55,9 @@ This avoids one huge README while still giving each teammate the context they ne
 
 ## Classification & Stealth Scraping Pipeline
 
-The events scraper uses a **two-stage classification pipeline** with humanized stealth browsing:
+The events scraper uses a **two-stage classification pipeline** powered by Apify and Google Gemini:
 
-1. **In-Place DOM Caption Expansion & Stealth Context** — Playwright runs with authentic desktop browser headers (Chrome 128, 1080p, `en-PH`, `Asia/Manila`, `--disable-blink-features=AutomationControlled`). As the scraper scrolls, it expands `"See More"` / `"Tumingin pa"` buttons directly in the DOM without opening separate permalinks, eliminating rate-limiting and cross-post sidebar contamination.
+1. **Full Caption Extraction & Residential Unblocking** — Fetches complete, un-truncated post text and media assets via Apify's residential infrastructure without cookie requirements, eliminating "See More" truncation and login checkpoint walls.
 2. **Unicode Font Normalization Order** — `normalize_unicode_text()` executes *prior* to emoji stripping, preventing Mathematical Sans-Serif and Bold Unicode headers (e.g. San Juan City PIO) from being deleted by emoji character classes.
 3. **Pre-filter (keywords)** — `keywords.py` checks if the post text contains any known disruption keywords using `.casefold()` matching. Posts without any keyword hit are discarded immediately to save LLM API quota.
 4. **Multi-Modal LLM extraction (Gemini)** — `llm_classifier.py` fuses the expanded caption and Gemini Vision OCR from attached infographics to extract structured metadata (`category`, `event_name`, `event_date`, `event_code`).
@@ -90,7 +90,7 @@ The events scraper executes via a matrix strategy running across **Eastbound** a
 - **11:00 AM PHT** (03:00 UTC): Midday weather, class, and afternoon activity adjustments
 - **4:00 PM PHT** (08:00 UTC): Evening advisories, next-day suspensions, and event updates
 
-The matrix automatically partitions your configured Facebook cookie profiles into non-overlapping account sets (Eastbound: Primary & Backup 2; Westbound: Backup 1 & Backup 3), preventing simultaneous session collisions across parallel runner VMs.
+The matrix automatically partitions your configured station target pages into non-overlapping batch runs (Eastbound & Westbound) executing concurrently on GitHub Actions.
 
 ## Environment Variables
 
@@ -102,11 +102,9 @@ The repo uses several secrets and environment variables for its pipelines:
 | `SUPABASE_KEY` | `scraper/`, `weather/` | Supabase API key for the REST client. |
 | `DATABASE_URL` | `internal-data-extractor/`, external workbook ingestions | PostgreSQL connection URL for direct ETL loading. |
 | `PGSSLROOTCERT` | Direct PostgreSQL ingestion scripts | Path to the Supabase SSL root certificate. |
+| `APIFY_API_TOKEN` | Facebook scraper (`scraper/`) | Apify API token used to fetch full post captions and image assets without cookie requirements. |
 | `GEMINI_API_KEY` | Facebook scraper, calendar scraper | API key for Gemini 2.0 Flash (OCR and LLM classification). Supports comma-separated lists for key rotation. |
 | `GEMINI_API_KEY_2`, `_3`, ... | Facebook scraper, calendar scraper | Additional Gemini API keys loaded sequentially for automatic failover when quota is exhausted. |
-| `FB_C_USER`, `FB_XS`, `FB_DATR`, `FB_FR`, `FB_SB` | Facebook scraper | Primary Facebook session cookies used by Playwright. |
-| `FB_C_USER_1`, `FB_XS_1`, etc. | Facebook scraper | Backup Facebook session cookies (supports up to `_9`). Used for automatic cookie rotation when the primary account is blocked. |
-| `FB_C_USER_2`, `FB_XS_2`, etc. | Facebook scraper | Additional backup Facebook session cookies. |
 | `SENDER_EMAIL` | Facebook scraper | Gmail address used to send automated email alerts. |
 | `SENDER_PASSWORD` | Facebook scraper | Gmail app password for SMTP authentication. |
 | `RECEIVER_EMAIL` | Facebook scraper | Comma-separated list of email recipients for alerts and calendar attachments. |
