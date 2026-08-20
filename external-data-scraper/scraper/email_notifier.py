@@ -9,9 +9,20 @@ from datetime import datetime
 
 load_dotenv()
 
+def mask_ci_text(val: str):
+    """Emit GitHub Actions ::add-mask:: workflow command to scrub sensitive text from public runner logs."""
+    if val and (os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"):
+        for line in str(val).splitlines():
+            clean = line.strip()
+            if len(clean) >= 6:
+                print(f"::add-mask::{clean}", flush=True)
+
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 RECEIVER_EMAILS = os.getenv("RECEIVER_EMAIL")
+
+mask_ci_text(SENDER_EMAIL)
+mask_ci_text(RECEIVER_EMAILS)
 
 def _send_email(subject: str, html_body: str):
     if not SENDER_EMAIL or not SENDER_PASSWORD or not RECEIVER_EMAILS:

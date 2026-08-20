@@ -13,6 +13,14 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 from unicode_normalizer import normalize_unicode_text
 
+def mask_ci_text(val: str):
+    """Emit GitHub Actions ::add-mask:: workflow command to scrub sensitive text from public runner logs."""
+    if val and (os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"):
+        for line in str(val).splitlines():
+            clean = line.strip()
+            if len(clean) >= 6:
+                print(f"::add-mask::{clean}", flush=True)
+
 # Lazy-initialized list of Gemini API keys
 _gemini_keys = None
 
@@ -568,6 +576,10 @@ def scrape_pages_batch(
                             image_text += " " + cleaned_fb_ocr
 
             if caption_text or image_text:
+                mask_ci_text(caption_text)
+                mask_ci_text(image_text)
+                mask_ci_text(post_url)
+
                 cleaned_text = caption_text
                 if not cleaned_text and image_text:
                     cleaned_text = "Official Advisory / Announcement (Infographic)"

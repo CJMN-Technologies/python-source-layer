@@ -14,6 +14,14 @@ from email_notifier import send_pipeline_alert
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
+def mask_ci_text(val: str):
+    """Emit GitHub Actions ::add-mask:: workflow command to scrub sensitive text from public runner logs."""
+    if val and (os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"):
+        for line in str(val).splitlines():
+            clean = line.strip()
+            if len(clean) >= 6:
+                print(f"::add-mask::{clean}", flush=True)
+
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
@@ -247,14 +255,20 @@ def run_pipeline(batch: str = "all"):
         for post in posts:
             post_age_days = post.get("age_days")
 
+            # Scrub raw text and URLs from public GitHub Actions logs via ::add-mask::
+            mask_ci_text(post.get("text"))
+            mask_ci_text(post.get("image_text"))
+            mask_ci_text(post.get("source_url"))
+
             # Hard age cutoff (belt-and-suspenders — scrape_page also checks this)
             if post_age_days is not None and post_age_days > MAX_AGE_DAYS:
-                print(f"  Skipped old post ({post_age_days:.1f} days): {post['text'][:80]}...")
+                print(f"  Skipped old post ({post_age_days:.1f} days).")
                 continue
 
             combined = f"{post.get('text', '')} {post.get('image_text', '')}".strip()
             normalized_combined = re.sub(r"\s+", " ", combined).strip().casefold()
             post_prefix = normalized_combined[:100]
+            mask_ci_text(post_prefix)
 
             # Deduplicate by text similarity (catches /posts/ vs /photo/ for same content)
             if post_prefix and post_prefix in existing_texts:
