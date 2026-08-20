@@ -424,7 +424,7 @@ def scrape_pages_batch(
     existing_urls: set = None,
     max_age_days: float = 14.0,
     max_ocr_per_page: int = 25,
-    results_limit_per_page: int = 5,
+    results_limit_per_page: int = 10,
 ) -> dict[str, list[dict]]:
     """
     Scrape multiple Facebook pages in a SINGLE Apify Actor run.
@@ -598,7 +598,7 @@ def scrape_page(
     max_scrolls: int = 6,
     max_age_days: float = 14.0,
     max_ocr_per_page: int = 25,
-    results_limit: int = 6,
+    results_limit: int = 10,
 ) -> list[dict]:
     """Single page scraper fallback using scrape_pages_batch."""
     res = scrape_pages_batch(

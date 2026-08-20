@@ -71,9 +71,10 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
      Set cancellation_target_code to the target event_code (e.g. TRANSPORT_STRIKE, CLASS_SUSPENSION, EXAM_WEEK, FRESHMEN_ORIENTATION).
 
 5. Standardize event_code for all events:
+   - ONLINE_CLASS_SHIFT (shift to online, asynchronous classes, remote learning modality, online synchronous)
+   - CLASS_SUSPENSION (full cancellation, walang pasok, suspended classes, campus closure, suspended operations)
    - TRANSPORT_STRIKE (jeepney strike, tigil pasada, transport disruption)
-   - CLASS_SUSPENSION (walang pasok, suspended classes, shift to online)
-   - RESUMPTION_CLASSES (resumption of classes/work)
+   - RESUMPTION_CLASSES (resumption of in-person classes/work)
    - EXAM_WEEK (midterms, finals, departmental exams)
    - FRESHMEN_ORIENTATION (Thomasian welcome, freshmen week, onboarding)
    - CIVIC_MAINTENANCE (tree trimming, road clearance, pruning)
@@ -83,9 +84,13 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - If the post caption text or OCR text ends abruptly or appears cut off with ellipses ('...') or trailing truncated words (e.g. "classes at al…"), evaluate available headline keywords (e.g. "Advisory", "Memorandum Circular No.", "In view of"), official organization name, and available image text.
    - Do NOT reject an advisory as null simply because a post caption cuts off before completing a sentence. If the post signals an official school/LGU advisory or class/work adjustment, output category ("academic" or "lgu") and a concise 5-8 word event_name based on the core advisory intent.
 
+7. STUDENT COUNCIL ADVOCACY & POLITICAL CRITIQUES vs OFFICIAL DECLARATIONS:
+   - If a post from a student council (e.g. USC, Student Council) is a political statement, press release, commentary on governance/flood control, or petition asking for accountability/leniency (even if it uses rhetorical slogans like 'Walang Pasok dahil sa korapsyon' or 'Panawagan'), do NOT classify it as CLASS_SUSPENSION or ONLINE_CLASS_SHIFT.
+   - If it does not announce a confirmed, declared suspension or shift by the University administration or LGU, output category = null.
+
 8. ADMINISTRATIVE STUDENT SERVICES vs ACTIVE DISRUPTION MILESTONES:
    - Routine non-disruptive administrative services (e.g. TOR/yearbook photoshoot schedules, student ID claiming, graduation pictorials, scholarship application forms, entrance exam online application deadlines, and student council helpdesk hotlines) do NOT cause transit crowd surges or classroom closures.
-   - Do NOT classify routine photoshoots or online form deadlines as EXAM_WEEK or CLASS_SUSPENSION.
+   - Do NOT classify routine photoshoots or online form deadlines as EXAM_WEEK, CLASS_SUSPENSION, or ONLINE_CLASS_SHIFT.
    - For routine photoshoots, application deadlines, and student council helpdesks, output category = null.
 
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
