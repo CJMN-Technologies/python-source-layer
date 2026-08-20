@@ -529,7 +529,13 @@ def scrape_pages_batch(
             if post_age_days is not None and post_age_days > max_age_days:
                 continue
 
-            caption_text = item.get("text") or ""
+            caption_text = (
+                item.get("text")
+                or item.get("resharedText")
+                or (item.get("sharePost", {}).get("text") if isinstance(item.get("sharePost"), dict) else None)
+                or (item.get("attachedPost", {}).get("text") if isinstance(item.get("attachedPost"), dict) else None)
+                or ""
+            )
             caption_text = clean_caption_text(caption_text)
 
             # Extract image text via OCR

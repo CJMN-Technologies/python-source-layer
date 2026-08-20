@@ -83,9 +83,10 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - If the post caption text or OCR text ends abruptly or appears cut off with ellipses ('...') or trailing truncated words (e.g. "classes at al…"), evaluate available headline keywords (e.g. "Advisory", "Memorandum Circular No.", "In view of"), official organization name, and available image text.
    - Do NOT reject an advisory as null simply because a post caption cuts off before completing a sentence. If the post signals an official school/LGU advisory or class/work adjustment, output category ("academic" or "lgu") and a concise 5-8 word event_name based on the core advisory intent.
 
-7. STUDENT COUNCIL ADVOCACY & POLITICAL CRITIQUES vs OFFICIAL SUSPENSIONS:
-   - If a post from a student council (e.g. USC, Student Council) is a political statement, press release, commentary on governance/flood control, or petition asking for accountability/leniency (even if it uses rhetorical slogans like 'Walang Pasok dahil sa korapsyon' or 'Panawagan'), do NOT classify it as CLASS_SUSPENSION.
-   - If it does not announce a confirmed, declared suspension by the University administration or LGU, output category = null.
+8. ADMINISTRATIVE STUDENT SERVICES vs ACTIVE DISRUPTION MILESTONES:
+   - Routine non-disruptive administrative services (e.g. TOR/yearbook photoshoot schedules, student ID claiming, graduation pictorials, scholarship application forms, entrance exam online application deadlines, and student council helpdesk hotlines) do NOT cause transit crowd surges or classroom closures.
+   - Do NOT classify routine photoshoots or online form deadlines as EXAM_WEEK or CLASS_SUSPENSION.
+   - For routine photoshoots, application deadlines, and student council helpdesks, output category = null.
 
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
@@ -104,9 +105,9 @@ CATEGORY "academic":
   - Class Suspension / Holiday (school-specific or campus-wide)
   - Cancellation of Examinations / Medical Clearances
   - Resumption of Classes
-  - Active University Exam Week (Midterms, Finals — only if exams are ACTUALLY being held, NOT cancelled)
-  - Enrollment / Registration Period
-  - Graduation / Commencement Ceremonies
+  - Active University Exam Week (Midterms, Finals — only if actual major campus exams are being held)
+  - Official Enrollment / Registration Period (campus-wide)
+  - Official Graduation / Commencement Ceremonies
   - School Holidays / Academic Breaks
   - Walang Pasok, Walang Klase, Suspendido ang Klase
 
@@ -115,6 +116,7 @@ CATEGORY "academic_calendar":
 
 CATEGORY null (reject — not relevant):
   - Student council political commentary, statements of solidarity, corruption critiques, or petitions lacking official university administrative declaration.
+  - Routine administrative notices (TOR photoshoots, student ID claiming, scholarship forms, entrance exam form deadlines, student council helpdesks).
   - Generic greetings, food/merchandise promos, job ads, alumni news with no commuter impact.
 
 === EXTRACTION RULES ===

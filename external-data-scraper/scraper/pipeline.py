@@ -294,6 +294,19 @@ def run_pipeline(batch: str = "all"):
                 event_date = llm_res.get("event_date")
 
             now = datetime.now(timezone.utc)
+
+            # Check if extracted event_date is definitively in the past (> 14 days ago, e.g. commemorative photo albums)
+            if event_date and category != "academic_calendar":
+                date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", event_date)
+                if date_match:
+                    try:
+                        extracted_dt = datetime(int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3)), tzinfo=timezone.utc)
+                        if (now - extracted_dt).days > 14:
+                            print(f"  Skipped past historical/commemorative post ({date_match.group(0)} is > 14 days ago).")
+                            continue
+                    except Exception:
+                        pass
+
             if post_age_days is not None:
                 post_date = now - timedelta(days=post_age_days)
             else:
