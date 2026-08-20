@@ -6,8 +6,9 @@ name: Weather Watchdog Backup Pipeline
 # ---------------------------------------------------------------------------
 
 on:
-  # schedule:
-  #   - cron: '30 21-23,0-14 * * *'
+  schedule:
+    # Runs at the :30 minute mark between top-of-the-hour runs during operating hours
+    - cron: '30 21-23,0-14 * * *'
   workflow_dispatch: # Allows manual trigger from the GitHub UI
 
 jobs:
