@@ -5,7 +5,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from fb_scraper import scrape_page, is_valid_facebook_post_url
+from fb_scraper import scrape_pages_batch, is_valid_facebook_post_url
 from keywords import classify_post
 from llm_classifier import classify_post_llm
 from email_notifier import send_pipeline_alert
@@ -228,18 +228,21 @@ def run_pipeline(batch: str = "all"):
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
+    # Single Apify Actor run for all pages in this batch to minimize cost!
+    scraped_data_by_url = scrape_pages_batch(
+        pages=pages,
+        existing_urls=existing_urls,
+        max_age_days=MAX_AGE_DAYS,
+        results_limit_per_page=5,
+    )
+
     total_saved = 0
     newly_saved_events = []
 
     for page_idx, page in enumerate(pages):
-        print(f"\n[{page_idx + 1}/{len(pages)}] Scraping: {page['name']} ({page['station']}) — Batch {page.get('batch','?')}")
-
-        posts = scrape_page(
-            page["url"],
-            existing_urls=existing_urls,
-            max_age_days=MAX_AGE_DAYS,
-            results_limit=5,
-        )
+        print(f"\n[{page_idx + 1}/{len(pages)}] Processing: {page['name']} ({page['station']}) — Batch {page.get('batch','?')}")
+        posts = scraped_data_by_url.get(page["url"], [])
+        print(f"  Evaluating {len(posts)} posts for events...")
 
         for post in posts:
             post_age_days = post.get("age_days")

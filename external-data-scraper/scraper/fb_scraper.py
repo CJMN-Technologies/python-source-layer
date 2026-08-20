@@ -419,6 +419,172 @@ def _block_unnecessary_resources(route, request):
 # ---------------------------------------------------------------------------
 # Core Apify Scraper Engine
 # ---------------------------------------------------------------------------
+def scrape_pages_batch(
+    pages: list[dict],
+    existing_urls: set = None,
+    max_age_days: float = 14.0,
+    max_ocr_per_page: int = 25,
+    results_limit_per_page: int = 5,
+) -> dict[str, list[dict]]:
+    """
+    Scrape multiple Facebook pages in a SINGLE Apify Actor run.
+    This reduces Apify container startup charges by over 90%!
+    
+    Returns:
+        dict mapping normalized page_url -> list of post dicts.
+    """
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+
+    token = os.getenv("APIFY_API_TOKEN")
+    if not token:
+        print("  Error: APIFY_API_TOKEN not found in environment!")
+        return {}
+
+    if not pages:
+        return {}
+
+    start_urls = [{"url": p["url"]} for p in pages if p.get("url")]
+    print(f"  🚀 Launching single Apify batch run for {len(start_urls)} pages...")
+
+    client = ApifyClient(token)
+    run_input = {
+        "startUrls": start_urls,
+        "resultsLimit": results_limit_per_page,
+    }
+
+    try:
+        run = client.actor("apify/facebook-posts-scraper").call(run_input=run_input)
+        if not run:
+            print("  Apify batch run failed to start.")
+            return {}
+        dataset_items = list(client.dataset(run.default_dataset_id).iterate_items())
+        print(f"  ✅ Apify batch finished! Received {len(dataset_items)} total posts across all pages.")
+    except Exception as e:
+        print(f"  Apify batch error: {e}")
+        return {}
+
+    # Group raw items by page URL
+    items_by_page: dict[str, list[dict]] = {p["url"]: [] for p in pages}
+    for item in dataset_items:
+        input_url = item.get("inputUrl") or item.get("facebookUrl") or ""
+        # Match input_url against pages
+        matched_url = None
+        for p in pages:
+            p_url = p["url"]
+            if p_url.rstrip("/").lower() in input_url.lower() or input_url.lower() in p_url.rstrip("/").lower():
+                matched_url = p_url
+                break
+        if not matched_url and pages:
+            # Fallback to pageName matching
+            page_name = (item.get("pageName") or "").lower()
+            for p in pages:
+                if page_name and page_name in p["url"].lower():
+                    matched_url = p["url"]
+                    break
+
+        if matched_url:
+            items_by_page[matched_url].append(item)
+        elif pages:
+            items_by_page[pages[0]["url"]].append(item)
+
+    now = datetime.now(timezone.utc)
+    results_by_page: dict[str, list[dict]] = {}
+
+    for p in pages:
+        p_url = p["url"]
+        raw_items = items_by_page.get(p_url, [])
+        page_posts = []
+        page_ocr_count = 0
+
+        for item in raw_items:
+            post_url = item.get("url") or item.get("topLevelUrl") or ""
+            post_url = clean_url(post_url) if post_url else ""
+
+            if not is_valid_facebook_post_url(post_url, p_url):
+                top_url = item.get("topLevelUrl")
+                if top_url and is_valid_facebook_post_url(clean_url(top_url), p_url):
+                    post_url = clean_url(top_url)
+
+            if existing_urls and post_url in existing_urls:
+                continue
+
+            # Parse post timestamp / age
+            post_age_days = None
+            iso_time = item.get("time")
+            timestamp = item.get("timestamp")
+            if iso_time:
+                try:
+                    dt = datetime.fromisoformat(iso_time.replace("Z", "+00:00"))
+                    post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+                except Exception:
+                    pass
+            elif timestamp:
+                try:
+                    dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                    post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+                except Exception:
+                    pass
+
+            if post_age_days is not None and post_age_days > max_age_days:
+                continue
+
+            caption_text = item.get("text") or ""
+            caption_text = clean_caption_text(caption_text)
+
+            # Extract image text via OCR
+            image_text = ""
+            media_list = item.get("media") or []
+            for m in media_list:
+                if page_ocr_count >= max_ocr_per_page:
+                    break
+                img_uri = None
+                if isinstance(m, dict):
+                    photo_img = m.get("photo_image")
+                    if isinstance(photo_img, dict) and photo_img.get("uri"):
+                        img_uri = photo_img.get("uri")
+                    elif m.get("thumbnail"):
+                        img_uri = m.get("thumbnail")
+                    elif m.get("url") and "facebook.com/photo" not in m.get("url"):
+                        img_uri = m.get("url")
+                    fb_ocr = m.get("ocrText") or ""
+                else:
+                    fb_ocr = ""
+
+                if img_uri:
+                    ocr_res = extract_text_from_image(img_uri)
+                    if ocr_res:
+                        image_text += " " + ocr_res
+                        page_ocr_count += 1
+                    elif fb_ocr:
+                        cleaned_fb_ocr = clean_ocr_text(fb_ocr)
+                        if cleaned_fb_ocr:
+                            image_text += " " + cleaned_fb_ocr
+
+            if caption_text or image_text:
+                cleaned_text = caption_text
+                if not cleaned_text and image_text:
+                    cleaned_text = "Official Advisory / Announcement (Infographic)"
+
+                page_posts.append({
+                    "text": cleaned_text,
+                    "image_text": image_text.strip(),
+                    "source_url": post_url or p_url,
+                    "age_days": post_age_days,
+                })
+
+        seen = set()
+        unique_posts = []
+        for post_item in page_posts:
+            if post_item["text"] not in seen:
+                seen.add(post_item["text"])
+                unique_posts.append(post_item)
+
+        results_by_page[p_url] = unique_posts
+
+    return results_by_page
+
+
 def scrape_page(
     page_url: str,
     cookies: list = None,
@@ -428,132 +594,12 @@ def scrape_page(
     max_ocr_per_page: int = 25,
     results_limit: int = 6,
 ) -> list[dict]:
-    """
-    Scrape a single Facebook page for relevant events using Apify.
-    
-    Args:
-        page_url: Facebook page URL.
-        cookies: (Deprecated, unused with Apify).
-        existing_urls: Set of known post URLs to skip.
-        max_scrolls: Unused legacy parameter.
-        max_age_days: Cutoff threshold in days.
-        max_ocr_per_page: Max images to OCR per page.
-        results_limit: Number of latest posts to fetch.
-    """
-    from dotenv import load_dotenv
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
-    
-    token = os.getenv("APIFY_API_TOKEN")
-    if not token:
-        print("  Error: APIFY_API_TOKEN not found in environment!")
-        return []
-
-    client = ApifyClient(token)
-    run_input = {
-        "startUrls": [{"url": page_url}],
-        "resultsLimit": results_limit,
-    }
-
-    try:
-        run = client.actor("apify/facebook-posts-scraper").call(run_input=run_input)
-        if not run:
-            print(f"  Apify run failed for {page_url}")
-            return []
-
-        dataset_items = list(client.dataset(run.default_dataset_id).iterate_items())
-    except Exception as e:
-        print(f"  Apify call failed on {page_url}: {e}")
-        return []
-
-    now = datetime.now(timezone.utc)
-    posts = []
-    page_ocr_count = 0
-
-    for item in dataset_items:
-        post_url = item.get("url") or item.get("topLevelUrl") or ""
-        post_url = clean_url(post_url) if post_url else ""
-
-        if not is_valid_facebook_post_url(post_url, page_url):
-            # Still check topLevelUrl if url is a share link
-            top_url = item.get("topLevelUrl")
-            if top_url and is_valid_facebook_post_url(clean_url(top_url), page_url):
-                post_url = clean_url(top_url)
-
-        if existing_urls and post_url in existing_urls:
-            continue
-
-        # Parse post timestamp / age
-        post_age_days = None
-        iso_time = item.get("time")
-        timestamp = item.get("timestamp")
-        if iso_time:
-            try:
-                dt = datetime.fromisoformat(iso_time.replace("Z", "+00:00"))
-                post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
-            except Exception:
-                pass
-        elif timestamp:
-            try:
-                dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-                post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
-            except Exception:
-                pass
-
-        if post_age_days is not None and post_age_days > max_age_days:
-            print(f"  Skipped old post ({post_age_days:.1f}d > {max_age_days}d limit).")
-            continue
-
-        caption_text = item.get("text") or ""
-        caption_text = clean_caption_text(caption_text)
-
-        # Extract image text via OCR
-        image_text = ""
-        media_list = item.get("media") or []
-        for m in media_list:
-            if page_ocr_count >= max_ocr_per_page:
-                break
-            img_uri = None
-            if isinstance(m, dict):
-                photo_img = m.get("photo_image")
-                if isinstance(photo_img, dict) and photo_img.get("uri"):
-                    img_uri = photo_img.get("uri")
-                elif m.get("thumbnail"):
-                    img_uri = m.get("thumbnail")
-                elif m.get("url") and "facebook.com/photo" not in m.get("url"):
-                    img_uri = m.get("url")
-
-                fb_ocr = m.get("ocrText") or ""
-            else:
-                fb_ocr = ""
-
-            if img_uri:
-                ocr_res = extract_text_from_image(img_uri)
-                if ocr_res:
-                    image_text += " " + ocr_res
-                    page_ocr_count += 1
-                elif fb_ocr:
-                    cleaned_fb_ocr = clean_ocr_text(fb_ocr)
-                    if cleaned_fb_ocr:
-                        image_text += " " + cleaned_fb_ocr
-
-        if caption_text or image_text:
-            cleaned_text = caption_text
-            if not cleaned_text and image_text:
-                cleaned_text = "Official Advisory / Announcement (Infographic)"
-
-            posts.append({
-                "text": cleaned_text,
-                "image_text": image_text.strip(),
-                "source_url": post_url or page_url,
-                "age_days": post_age_days,
-            })
-
-    seen = set()
-    unique_posts = []
-    for p in posts:
-        if p["text"] not in seen:
-            seen.add(p["text"])
-            unique_posts.append(p)
-
-    print(f"  Found {len(unique_posts)} relevant unique posts")
-    return unique_posts
+    """Single page scraper fallback using scrape_pages_batch."""
+    res = scrape_pages_batch(
+        pages=[{"url": page_url}],
+        existing_urls=existing_urls,
+        max_age_days=max_age_days,
+        max_ocr_per_page=max_ocr_per_page,
+        results_limit_per_page=results_limit,
+    )
+    return res.get(page_url, [])

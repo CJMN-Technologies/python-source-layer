@@ -264,9 +264,8 @@ def generate_calendar_excel(data: list[dict], source_name: str) -> str:
 # ---------------------------------------------------------------------------
 # Main scraper function
 # ---------------------------------------------------------------------------
-def scrape_calendar(page_url: str, page_name: str, page_station: str,
-                    cookies: list = None, max_scrolls: int = MAX_SCROLLS):
-    """Scrape a single Facebook page for academic calendar posts using Apify."""
+def scrape_all_calendars(pages: list[dict]):
+    """Scrape all university Facebook pages for academic calendar posts in ONE single Apify run."""
     processed = load_processed()
     posts_found = []
 
@@ -275,9 +274,19 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
         print("  Error: APIFY_API_TOKEN not found in environment!")
         return []
 
+    ignore_keywords = ["pagasa", "public information office", "pio", "government", "municipality"]
+    university_pages = [p for p in pages if not any(kw in p["name"].casefold() for kw in ignore_keywords)]
+
+    if not university_pages:
+        print("No university pages to scrape.")
+        return []
+
+    start_urls = [{"url": p["url"]} for p in university_pages if p.get("url")]
+    print(f"🚀 Launching single Apify batch for all {len(start_urls)} universities...")
+
     client = ApifyClient(token)
     run_input = {
-        "startUrls": [{"url": page_url}],
+        "startUrls": start_urls,
         "resultsLimit": 10,
     }
 
@@ -285,133 +294,157 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
         run = client.actor("apify/facebook-posts-scraper").call(run_input=run_input)
         if not run:
             return []
-        items = list(client.dataset(run.default_dataset_id).iterate_items())
+        dataset_items = list(client.dataset(run.default_dataset_id).iterate_items())
+        print(f"✅ Apify batch finished! Received {len(dataset_items)} total posts across all universities.")
     except Exception as e:
-        print(f"  Apify error on {page_url}: {e}")
+        print(f"  Apify batch error: {e}")
         return []
 
+    items_by_page: dict[str, list[dict]] = {p["url"]: [] for p in university_pages}
+    for item in dataset_items:
+        input_url = item.get("inputUrl") or item.get("facebookUrl") or ""
+        matched_url = None
+        for p in university_pages:
+            p_url = p["url"]
+            if p_url.rstrip("/").lower() in input_url.lower() or input_url.lower() in p_url.rstrip("/").lower():
+                matched_url = p_url
+                break
+        if not matched_url and university_pages:
+            page_name = (item.get("pageName") or "").lower()
+            for p in university_pages:
+                if page_name and page_name in p["url"].lower():
+                    matched_url = p["url"]
+                    break
+
+        if matched_url:
+            items_by_page[matched_url].append(item)
+        elif university_pages:
+            items_by_page[university_pages[0]["url"]].append(item)
+
     now = datetime.now(timezone.utc)
-    page_ocr_count = 0
 
-    for item in items:
-        post_url = item.get("url") or item.get("topLevelUrl") or ""
-        post_url = clean_url(post_url) if post_url else ""
+    for p in university_pages:
+        page_url = p["url"]
+        page_name = p["name"]
+        page_station = p["station"]
+        raw_items = items_by_page.get(page_url, [])
+        page_ocr_count = 0
 
-        if not is_valid_facebook_post_url(post_url, page_url):
-            top_url = item.get("topLevelUrl")
-            if top_url and is_valid_facebook_post_url(clean_url(top_url), page_url):
-                post_url = clean_url(top_url)
+        print(f"\n[Calendar] Evaluating: {page_name} ({page_station}) — {len(raw_items)} posts")
 
-        if post_url in processed:
-            continue
+        for item in raw_items:
+            post_url = item.get("url") or item.get("topLevelUrl") or ""
+            post_url = clean_url(post_url) if post_url else ""
 
-        # Parse post age
-        post_age_days = None
-        iso_time = item.get("time")
-        timestamp = item.get("timestamp")
-        if iso_time:
-            try:
-                dt = datetime.fromisoformat(iso_time.replace("Z", "+00:00"))
-                post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
-            except Exception:
-                pass
-        elif timestamp:
-            try:
-                dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-                post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
-            except Exception:
-                pass
+            if not is_valid_facebook_post_url(post_url, page_url):
+                top_url = item.get("topLevelUrl")
+                if top_url and is_valid_facebook_post_url(clean_url(top_url), page_url):
+                    post_url = clean_url(top_url)
 
-        if post_age_days is not None and post_age_days > MAX_AGE_DAYS:
-            continue
-
-        caption_text = item.get("text") or ""
-        caption_text = clean_caption_text(caption_text)
-
-        # OLFU filter: only Antipolo campus or systemwide notice
-        if "fatima" in page_url.casefold() or "fatima" in page_name.casefold():
-            normalized_caption = normalize_unicode_text(caption_text).casefold()
-            is_sys = any(k in normalized_caption for k in ["all campuses", "all olfu campuses", "all branches", "systemwide", "entire university"])
-            antipolo_excepted = bool(re.search(r"(?:except|excluding|maliban\s+sa)\s+(?:(?:for|sa)\s+)?(?:olfu\s+)?antipolo", normalized_caption))
-            if is_sys and antipolo_excepted:
-                continue
-            if not is_sys and "antipolo" not in normalized_caption:
+            if post_url in processed:
                 continue
 
-        combined_text = caption_text
+            post_age_days = None
+            iso_time = item.get("time")
+            timestamp = item.get("timestamp")
+            if iso_time:
+                try:
+                    dt = datetime.fromisoformat(iso_time.replace("Z", "+00:00"))
+                    post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+                except Exception:
+                    pass
+            elif timestamp:
+                try:
+                    dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                    post_age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+                except Exception:
+                    pass
 
-        # Check if caption passes calendar filter, otherwise check OCR
-        if not is_valid_calendar_post(combined_text):
-            if has_calendar_hint(combined_text) and page_ocr_count < MAX_OCR_PER_PAGE:
-                media_list = item.get("media") or []
-                for m in media_list:
-                    if page_ocr_count >= MAX_OCR_PER_PAGE:
-                        break
-                    img_uri = None
-                    if isinstance(m, dict):
-                        photo_img = m.get("photo_image")
-                        if isinstance(photo_img, dict) and photo_img.get("uri"):
-                            img_uri = photo_img.get("uri")
-                        elif m.get("thumbnail"):
-                            img_uri = m.get("thumbnail")
-                    if img_uri:
-                        ocr_res = extract_text_from_image(img_uri)
-                        if ocr_res:
-                            page_ocr_count += 1
-                            combined_text += " " + ocr_res
-                            if is_valid_calendar_post(combined_text):
-                                break
+            if post_age_days is not None and post_age_days > MAX_AGE_DAYS:
+                continue
 
-        if not is_valid_calendar_post(combined_text):
-            continue
+            caption_text = item.get("text") or ""
+            caption_text = clean_caption_text(caption_text)
 
-        print(f"  *** VALID ACADEMIC CALENDAR DETECTED! ***")
-        print(f"  Page: {page_name} ({page_station})")
-        print(f"  Post URL: {post_url}")
-        print(f"  Preview: {combined_text[:120]}...")
+            # OLFU filter
+            if "fatima" in page_url.casefold() or "fatima" in page_name.casefold():
+                normalized_caption = normalize_unicode_text(caption_text).casefold()
+                is_sys = any(k in normalized_caption for k in ["all campuses", "all olfu campuses", "all branches", "systemwide", "entire university"])
+                antipolo_excepted = bool(re.search(r"(?:except|excluding|maliban\s+sa)\s+(?:(?:for|sa)\s+)?(?:olfu\s+)?antipolo", normalized_caption))
+                if is_sys and antipolo_excepted:
+                    continue
+                if not is_sys and "antipolo" not in normalized_caption:
+                    continue
 
-        # Construct DB record
-        cal_id = _next_calendar_id()
-        scraped_at = now.isoformat()
-        post_date = (now - timedelta(days=post_age_days)).isoformat() if post_age_days is not None else scraped_at
+            combined_text = caption_text
 
-        row = {
-            "id": cal_id,
-            "station": page_station,
-            "source_name": page_name,
-            "source_url": post_url,
-            "post_text": caption_text[:5000],
-            "image_text": combined_text.replace(caption_text, "").strip()[:5000] if combined_text != caption_text else None,
-            "category": "academic_calendar",
-            "event_name": f"Academic Calendar A.Y. 2026-2027 — {get_acronym(page_name)}",
-            "event_date": "A.Y. 2026-2027",
-            "event_code": None,
-            "is_cancellation": False,
-            "cancellation_target_code": None,
-            "scraped_at": scraped_at,
-            "post_date": post_date,
-        }
+            if not is_valid_calendar_post(combined_text):
+                if has_calendar_hint(combined_text) and page_ocr_count < MAX_OCR_PER_PAGE:
+                    media_list = item.get("media") or []
+                    for m in media_list:
+                        if page_ocr_count >= MAX_OCR_PER_PAGE:
+                            break
+                        img_uri = None
+                        if isinstance(m, dict):
+                            photo_img = m.get("photo_image")
+                            if isinstance(photo_img, dict) and photo_img.get("uri"):
+                                img_uri = photo_img.get("uri")
+                            elif m.get("thumbnail"):
+                                img_uri = m.get("thumbnail")
+                        if img_uri:
+                            ocr_res = extract_text_from_image(img_uri)
+                            if ocr_res:
+                                page_ocr_count += 1
+                                combined_text += " " + ocr_res
+                                if is_valid_calendar_post(combined_text):
+                                    break
 
-        # Upsert into Supabase
-        try:
-            supabase.schema("external").table("academic_lgu_events").upsert(row).execute()
-            print(f"  >> Upserted to Supabase: {cal_id}")
-        except Exception as e:
-            print(f"  Supabase upsert failed: {e}")
+            if not is_valid_calendar_post(combined_text):
+                continue
 
-        # Generate Excel
-        excel_path = generate_calendar_excel([row], page_name)
-        print(f"  >> Excel saved: {excel_path}")
+            print(f"  *** VALID ACADEMIC CALENDAR DETECTED! ***")
+            print(f"  Page: {page_name} ({page_station})")
+            print(f"  Post URL: {post_url}")
+            print(f"  Preview: {combined_text[:120]}...")
 
-        # Email with attachment
-        try:
-            send_calendar_with_attachment(page_name, excel_path, post_url)
-        except Exception as e:
-            print(f"  Email failed: {e}")
+            cal_id = _next_calendar_id()
+            scraped_at = now.isoformat()
+            post_date = (now - timedelta(days=post_age_days)).isoformat() if post_age_days is not None else scraped_at
 
-        posts_found.append(row)
-        processed.add(post_url)
-        save_processed(processed)
+            row = {
+                "id": cal_id,
+                "station": page_station,
+                "source_name": page_name,
+                "source_url": post_url,
+                "post_text": caption_text[:5000],
+                "image_text": combined_text.replace(caption_text, "").strip()[:5000] if combined_text != caption_text else None,
+                "category": "academic_calendar",
+                "event_name": f"Academic Calendar A.Y. 2026-2027 — {get_acronym(page_name)}",
+                "event_date": "A.Y. 2026-2027",
+                "event_code": None,
+                "is_cancellation": False,
+                "cancellation_target_code": None,
+                "scraped_at": scraped_at,
+                "post_date": post_date,
+            }
+
+            try:
+                supabase.schema("external").table("academic_lgu_events").upsert(row).execute()
+                print(f"  >> Upserted to Supabase: {cal_id}")
+            except Exception as e:
+                print(f"  Supabase upsert failed: {e}")
+
+            excel_path = generate_calendar_excel([row], page_name)
+            print(f"  >> Excel saved: {excel_path}")
+
+            try:
+                send_calendar_with_attachment(page_name, excel_path, post_url)
+            except Exception as e:
+                print(f"  Email failed: {e}")
+
+            posts_found.append(row)
+            processed.add(post_url)
+            save_processed(processed)
 
     return posts_found
 
@@ -420,29 +453,13 @@ def scrape_calendar(page_url: str, page_name: str, page_station: str,
 # Main entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    print("=== Academic Calendar Scraper Starting (Apify Powered) ===")
+    print("=== Academic Calendar Scraper Starting (Single-Batch Apify Powered) ===")
     print(f"Time (PHT): {datetime.now(timezone(timedelta(hours=8)))}")
     print(f"Max post age: {MAX_AGE_DAYS} days")
 
     with open(os.path.join(os.path.dirname(__file__), "pages.json"), "r", encoding="utf-8") as f:
         all_pages = json.load(f)
 
-    # Only scrape university/school pages — skip LGUs and weather agencies
-    ignore_keywords = ["pagasa", "public information office", "pio", "government", "municipality"]
-
-    all_new = []
-
-    for p in all_pages:
-        if any(kw in p['name'].casefold() for kw in ignore_keywords):
-            print(f"\nSkipping non-university page: {p['name']}")
-            continue
-
-        print(f"\n[Calendar] Scanning: {p['name']} ({p['station']})")
-        result = scrape_calendar(p['url'], p['name'], p['station'])
-
-        if isinstance(result, list):
-            for r in result:
-                if isinstance(r, dict):
-                    all_new.append(r)
+    all_new = scrape_all_calendars(all_pages)
 
     print(f"\n=== Done! {len(all_new)} calendar(s) found ===")
