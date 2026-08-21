@@ -430,13 +430,14 @@ def _block_unnecessary_resources(route, request):
 def scrape_pages_batch(
     pages: list[dict],
     existing_urls: set = None,
-    max_age_days: float = 14.0,
+    existing_texts: set = None,
+    max_age_days: float = 2.0,
     max_ocr_per_page: int = 25,
-    results_limit_per_page: int = 10,
+    results_limit_per_page: int = 4,
 ) -> dict[str, list[dict]]:
     """
-    Scrape multiple Facebook pages in a SINGLE Apify Actor run.
-    This reduces Apify container startup charges by over 90%!
+    Scrape multiple Facebook pages using dynamic per-page limits to strictly target the last 48 hours.
+    This reduces Apify compute and dataset charges by ~55%!
     
     Returns:
         dict mapping normalized page_url -> list of post dicts.
@@ -452,25 +453,31 @@ def scrape_pages_batch(
     if not pages:
         return {}
 
-    start_urls = [{"url": p["url"]} for p in pages if p.get("url")]
-    print(f"  🚀 Launching single Apify batch run for {len(start_urls)} pages...")
-
     client = ApifyClient(token)
-    run_input = {
-        "startUrls": start_urls,
-        "resultsLimit": results_limit_per_page,
-    }
 
-    try:
-        run = client.actor("apify/facebook-posts-scraper").call(run_input=run_input)
-        if not run:
-            print("  Apify batch run failed to start.")
-            return {}
-        dataset_items = list(client.dataset(run.default_dataset_id).iterate_items())
-        print(f"  ✅ Apify batch finished! Received {len(dataset_items)} total posts across all pages.")
-    except Exception as e:
-        print(f"  Apify batch error: {e}")
-        return {}
+    # Group pages by their specific results_limit
+    grouped: dict[int, list[dict]] = {}
+    for p in pages:
+        lim = p.get("results_limit", results_limit_per_page)
+        grouped.setdefault(lim, []).append(p)
+
+    dataset_items = []
+    for lim, page_group in sorted(grouped.items(), reverse=True):
+        start_urls = [{"url": p["url"]} for p in page_group if p.get("url")]
+        print(f"  🚀 Launching Apify batch for {len(start_urls)} pages (Target: {lim} posts/page)...")
+        run_input = {
+            "startUrls": start_urls,
+            "resultsLimit": lim,
+        }
+        try:
+            run = client.actor("apify/facebook-posts-scraper").call(run_input=run_input)
+            if run:
+                items = list(client.dataset(run.default_dataset_id).iterate_items())
+                dataset_items.extend(items)
+        except Exception as e:
+            print(f"  Apify batch error (limit {lim}): {e}")
+
+    print(f"  ✅ Apify scraping finished! Received {len(dataset_items)} total posts across all {len(pages)} pages.")
 
     # Group raw items by page URL
     items_by_page: dict[str, list[dict]] = {p["url"]: [] for p in pages}

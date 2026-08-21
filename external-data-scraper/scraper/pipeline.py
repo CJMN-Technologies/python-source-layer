@@ -26,8 +26,8 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# Hard ceiling: never ingest posts older than this many days from now
-MAX_AGE_DAYS = 14.0
+# Hard ceiling: strictly target the last 48 hours (2.0 days)
+MAX_AGE_DAYS = 2.0
 
 # Default number of scrolls per page (can be overridden per page in pages.json)
 DEFAULT_MAX_SCROLLS = 6
@@ -37,7 +37,7 @@ def _next_ext_id_for_category(category: str) -> str:
     """Return next external_<category>_<NNNN> id by querying Supabase for the max existing id."""
     category_key = category.lower()
     if category_key in ("academic", "academic_calendar", "acad"):
-        category_code = "academic"
+        category_code = "acad"
     elif category_key == "lgu":
         category_code = "lgu"
     elif category_key == "pagasa":
@@ -59,8 +59,7 @@ def _next_ext_id_for_category(category: str) -> str:
         rows = res.data if hasattr(res, "data") else res
 
         if rows:
-            first = rows[0] if isinstance(rows, list) else rows
-            last_id = first.get("id") if isinstance(first, dict) else None
+            last_id = rows[0].get("id") if isinstance(rows[0], dict) else None
             if last_id:
                 try:
                     last_num = int(last_id.rsplit("_", 1)[-1])
@@ -212,36 +211,49 @@ def run_pipeline(batch: str = "all"):
     print(f"Time (UTC): {datetime.now(timezone.utc)}")
     print(f"Max post age: {MAX_AGE_DAYS} days")
 
-    # Load existing events for deduplication
+    # Load existing events for 3-Layer bulletproof deduplication
     existing_urls = set()
     existing_texts = set()
+    existing_event_keys = set()
     try:
         res = (
             supabase.schema("external")
             .table("academic_lgu_events")
-            .select("source_url, post_text, image_text")
+            .select("source_url, post_text, image_text, source_name, event_name, event_date")
             .execute()
         )
         rows = res.data if hasattr(res, "data") else res
         if rows:
-            existing_urls = {row.get("source_url") for row in rows if row.get("source_url")}
             for row in rows:
+                u = row.get("source_url")
+                if u:
+                    clean_u = u.split("?")[0].strip().lower()
+                    existing_urls.add(clean_u)
+                    existing_urls.add(u.strip().lower())
+
                 combined_db = re.sub(r"\s+", " ", f"{row.get('post_text') or ''} {row.get('image_text') or ''}").strip().casefold()
                 if combined_db:
                     existing_texts.add(combined_db[:100])
-        print(f"Loaded {len(existing_urls)} existing events from database.")
+
+                src = (row.get("source_name") or "").strip().lower()
+                ev = (row.get("event_name") or "").strip().lower()
+                dt = (row.get("event_date") or "").strip().lower()
+                if src and ev and ev != "n/a":
+                    existing_event_keys.add((src, ev, dt))
+
+        print(f"Loaded {len(existing_urls)} URLs and {len(existing_event_keys)} unique events from database.")
     except Exception as e:
         print(f"Warning: Could not fetch existing data from database: {e}")
 
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
-    # Single Apify Actor run for all pages in this batch to minimize cost!
+    # Single Apify Actor run with dynamic per-page limits (48-hour target)
     scraped_data_by_url = scrape_pages_batch(
         pages=pages,
         existing_urls=existing_urls,
+        existing_texts=existing_texts,
         max_age_days=MAX_AGE_DAYS,
-        results_limit_per_page=10,
     )
 
     total_saved = 0
@@ -260,9 +272,17 @@ def run_pipeline(batch: str = "all"):
             mask_ci_text(post.get("image_text"))
             mask_ci_text(post.get("source_url"))
 
-            # Hard age cutoff (belt-and-suspenders — scrape_page also checks this)
+            # Hard age cutoff: strict 48 hours
             if post_age_days is not None and post_age_days > MAX_AGE_DAYS:
-                print(f"  Skipped old post ({post_age_days:.1f} days).")
+                print(f"  Skipped old post ({post_age_days:.1f} days > {MAX_AGE_DAYS}d limit).")
+                continue
+
+            source_url = post.get("source_url", "")
+            clean_source_url = source_url.split("?")[0].strip().lower() if source_url else ""
+
+            # Layer 1: Check URL deduplication
+            if (clean_source_url and clean_source_url in existing_urls) or (source_url.strip().lower() in existing_urls):
+                print(f"  Skipped duplicate URL: {source_url} (Already in Supabase).")
                 continue
 
             combined = f"{post.get('text', '')} {post.get('image_text', '')}".strip()
@@ -270,7 +290,7 @@ def run_pipeline(batch: str = "all"):
             post_prefix = normalized_combined[:100]
             mask_ci_text(post_prefix)
 
-            # Deduplicate by text similarity (catches /posts/ vs /photo/ for same content)
+            # Layer 2: Deduplicate by text similarity
             if post_prefix and post_prefix in existing_texts:
                 print("  Skipped duplicate text (already in DB under different URL).")
                 continue
@@ -280,8 +300,6 @@ def run_pipeline(batch: str = "all"):
                 if not is_olfu_antipolo_post(combined):
                     print("  Skipped OLFU post: Does not mention Antipolo branch or systemwide notice.")
                     continue
-
-            # (PAGASA filtering logic removed)
 
             # PRE-FILTER with keywords (case-insensitive via classify_post using .casefold())
             pre_category = classify_post(combined)
@@ -307,9 +325,19 @@ def run_pipeline(batch: str = "all"):
                 event_name = llm_res.get("event_name")
                 event_date = llm_res.get("event_date")
 
+            # Layer 3: Semantic Event Deduplication (Prevents reminder posts from duplicating)
+            src_key = page["name"].strip().lower()
+            ev_key = (event_name or "").strip().lower()
+            dt_key = (event_date or "").strip().lower()
+            event_tuple = (src_key, ev_key, dt_key)
+
+            if ev_key and ev_key != "n/a" and event_tuple in existing_event_keys:
+                print(f"  Skipped duplicate event: [{page['name']}] '{event_name}' on '{event_date}' (Already in Supabase).")
+                continue
+
             now = datetime.now(timezone.utc)
 
-            # Check if extracted event_date is definitively in the past (> 14 days ago, e.g. commemorative photo albums)
+            # Check if extracted event_date is definitively in the past (> 14 days ago)
             if event_date and category != "academic_calendar":
                 date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", event_date)
                 if date_match:
@@ -324,10 +352,8 @@ def run_pipeline(batch: str = "all"):
             if post_age_days is not None:
                 post_date = now - timedelta(days=post_age_days)
             else:
-                # Age unknown: use now as best estimate
                 post_date = now
 
-            source_url = post.get("source_url", "")
             if not is_valid_facebook_post_url(source_url, page["url"]):
                 print(f"  Skipped unsafe/non-post source URL: {source_url or 'missing'}")
                 continue
@@ -352,9 +378,13 @@ def run_pipeline(batch: str = "all"):
                     "post_date":                post_date.isoformat(),
                 }).execute()
 
-                existing_urls.add(source_url)
+                existing_urls.add(clean_source_url)
+                existing_urls.add(source_url.strip().lower())
                 if post_prefix:
                     existing_texts.add(post_prefix)
+                if ev_key and ev_key != "n/a":
+                    existing_event_keys.add(event_tuple)
+
                 total_saved += 1
                 newly_saved_events.append({
                     "source_name": page["name"],
@@ -370,7 +400,7 @@ def run_pipeline(batch: str = "all"):
             except Exception as e:
                 print(f"  Failed to save post: {e}")
 
-    print(f"\n=== Done! {total_saved} posts saved to Supabase ===")
+    print(f"\n=== Done! {total_saved} new posts saved to Supabase ===")
 
     if newly_saved_events:
         print(f"Sending email alert for {len(newly_saved_events)} new events (Batch: {batch})...")
