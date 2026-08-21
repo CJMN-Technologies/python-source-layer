@@ -44,23 +44,32 @@ def clean_and_renumber():
     print(f"Rows to keep: {len(to_keep)}")
     
     print("Deleting ALL rows temporarily to safely re-number IDs without primary key collisions...")
-    # Delete in chunks
-    all_ids = [r["id"] for r in rows]
-    for i in range(0, len(all_ids), 100):
-        chunk = all_ids[i:i+100]
-        supabase.schema("external").table("academic_lgu_events").delete().in_("id", chunk).execute()
+    supabase.schema("external").table("academic_lgu_events").delete().neq("id", "0").execute()
         
     print("Renumbering remaining rows...")
     
-    # Re-categorize everything based on source_name just to be sure
+    # Re-categorize and clean event codes
     for row in to_keep:
         name_lower = row.get("source_name", "").lower()
+        event_name_lower = (row.get("event_name") or "").lower()
         if "pagasa" in name_lower:
             row["category"] = "pagasa"
-        elif "government" in name_lower or "pio" in name_lower:
+        elif any(k in name_lower for k in ["government", "pio", "public information", "municipality", "city of", "lgu"]):
             row["category"] = "lgu"
         else:
             row["category"] = "acad"
+
+        # Fix traffic and number coding advisories
+        if "number coding" in event_name_lower or "coding scheme" in event_name_lower or "caravan" in event_name_lower:
+            row["category"] = "lgu"
+            row["event_code"] = "CIVIC_MAINTENANCE"
+            row["is_cancellation"] = False
+            row["cancellation_target_code"] = None
+
+        # Fix class suspensions falsely marked as cancellations
+        if row.get("event_code") in ["CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT", "EXAM_WEEK", "FRESHMEN_ORIENTATION"] and not any(k in event_name_lower for k in ["resumed", "resume", "lifted", "called off", "cancelled"]):
+            row["is_cancellation"] = False
+            row["cancellation_target_code"] = None
             
     academic = [r for r in to_keep if r["category"] == "acad"]
     lgu = [r for r in to_keep if r["category"] == "lgu"]

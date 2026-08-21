@@ -115,10 +115,18 @@ LGU_ADVISORY_KEYWORDS = [
     "calamity",
     "disaster",
     "force majeure",
-    # Road / City events
+    # Road / Traffic / City events
     "road closure",
     "road closed",
     "partial road closure",
+    "number coding",
+    "expanded number coding",
+    "coding scheme",
+    "mmda hotline",
+    "abiso sa mga motorista",
+    "abiso mula sa mmda",
+    "lto caravan",
+    "theoretical driving course",
     # Tagalog
     "suspendido ang trabaho",
     "walang opisina",
@@ -413,6 +421,10 @@ def classify_post(text: str) -> str | None:
     arena_match = any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
     train_match = any(kw.casefold() in lowered for kw in TRAIN_DEGRADATION_KEYWORDS)
     academic_context = any(kw.casefold() in lowered for kw in ACADEMIC_CONTEXT_KEYWORDS)
+
+    # Traffic / Number coding / Caravan advisories always route to LGU
+    if any(k in lowered for k in ["number coding", "coding scheme", "abiso sa mga motorista", "abiso mula sa mmda", "lto caravan", "theoretical driving course"]):
+        return "lgu"
 
     # Transport/train disruptions and arena events are always relevant
     if transport_match or train_match:

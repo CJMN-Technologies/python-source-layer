@@ -48,11 +48,11 @@ Post categories:
 | `fb_scraper.py` | Core Playwright scraping engine — page loading, caption expansion, permalink extraction, post age parsing, Gemini OCR text extraction, resource blocking. |
 | `auth.py` | Builds Facebook cookie profiles from environment variables. Supports multiple accounts (primary + up to 9 backups). |
 | `keywords.py` | Pre-filter: classifies post text as `academic`, `lgu`, or irrelevant using keyword groups aligned to the friction weight table. Uses `.casefold()` for case-insensitive matching. |
-| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification with injected current reference date/year (`Today is August 13, 2026`) to prevent misdating events without explicit years to past years (e.g. 2024). Returns `category`, `event_name`, `event_date`, `event_code`, `is_cancellation`, and `cancellation_target_code` via Pydantic schema. |
+| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification with injected current reference date/year to prevent misdating. Returns `category`, `event_name`, `event_date`, `event_code`, `is_cancellation`, and `cancellation_target_code` via Pydantic schema. Strictly enforces `is_cancellation = false` for newly declared suspensions and routes number coding to `CIVIC_MAINTENANCE` (`lgu`). |
 | `calendar_scraper.py` | Academic calendar release detector — finds calendar posts, extracts dates via Gemini, generates Excel files per school, emails them as attachments, and upserts events to Supabase. |
 | `email_notifier.py` | Email alert system — sends pipeline summary emails (new events found), cookie expiration alerts, and academic calendar attachments via Gmail SMTP. |
 | `unicode_normalizer.py` | Converts decorative Unicode text (Mathematical Bold, Italic, Script, Double-Struck, Circled, Fullwidth) back to plain ASCII so keyword matching works regardless of Facebook font styling. |
-| `clean_and_renumber.py` | Database maintenance utility — deduplicates and re-numbers event IDs in `external.academic_lgu_events`. |
+| `clean_and_renumber.py` | Database maintenance utility — deduplicates and re-numbers event IDs in `external.academic_lgu_events` across `acad`, `lgu` (including municipalities), and `pagasa`. |
 | `debug_facebook_page.py` | Diagnostic tool — opens a Facebook page in Playwright and checks for login walls, keyword matches, and cookie validity. |
 | `pages.json` | List of Facebook pages to scrape, with station mappings, batch assignments (A/B/C/D), scrape priorities, and optional `max_scrolls` overrides. |
 | `processed_calendars.json` | Deduplication tracker for the calendar scraper — stores URLs of already-processed calendar posts. |

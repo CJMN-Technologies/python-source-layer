@@ -65,20 +65,25 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - When an announcement mentions a month and day without an explicit year (e.g. "August 13" or "Thursday, August 13"), ALWAYS set event_date using the current reference year ({ref_year}, e.g. "{ref_year}-08-13").
    - NEVER output past years (e.g. 2024 or 2025) for freshly scraped current advisories unless the post text explicitly states that past year.
 
-4. CANCELLATION / RESUMPTION DETECTION:
-   - If an announcement mentions that an event/activity/strike/exam/suspension is CALLED OFF, CANCELLED, LIFTED, POSTPONED, or RESUMED:
-     Set is_cancellation = true
-     Set cancellation_target_code to the target event_code (e.g. TRANSPORT_STRIKE, CLASS_SUSPENSION, EXAM_WEEK, FRESHMEN_ORIENTATION).
+4. CANCELLATION / RESUMPTION DETECTION (STRICT DEFINITIONS):
+   - STRICT DEFINITION: is_cancellation must ONLY be true when an existing disruption/strike/suspension/exam is officially LIFTED, CALLED OFF, CANCELLED, or when classes/work RESUME (returning to normal operations).
+     * Example: "Transport Strike is Called Off" -> is_cancellation = true, cancellation_target_code = "TRANSPORT_STRIKE", event_code = "TRANSPORT_STRIKE"
+     * Example: "Classes Resume Tomorrow" -> is_cancellation = true, cancellation_target_code = "CLASS_SUSPENSION", event_code = "RESUMPTION_CLASSES"
+     * Example: "Orientation Postponed / Cancelled" -> is_cancellation = true, cancellation_target_code = "FRESHMEN_ORIENTATION", event_code = "FRESHMEN_ORIENTATION"
+   - CRITICAL NEGATIVE RULE: Declaring a NEW class suspension, work suspension, school holiday, or number coding suspension is an active disruption event itself, NOT an event cancellation! ALWAYS set is_cancellation = false.
+     * "Walang Pasok Bukas / Classes Suspended" -> is_cancellation = false, event_code = "CLASS_SUSPENSION"
+     * "Special Non-Working Holiday / Ninoy Aquino Day" -> is_cancellation = false, event_code = "CLASS_SUSPENSION"
+     * "Suspension of Number Coding Scheme" -> is_cancellation = false, event_code = "CIVIC_MAINTENANCE"
 
 5. Standardize event_code for all events:
    - ONLINE_CLASS_SHIFT (shift to online, asynchronous classes, remote learning modality, online synchronous)
-   - CLASS_SUSPENSION (full cancellation, walang pasok, suspended classes, campus closure, suspended operations)
+   - CLASS_SUSPENSION (full cancellation, walang pasok, suspended classes, campus closure, suspended operations, school holidays)
    - TRANSPORT_STRIKE (jeepney strike, tigil pasada, transport disruption)
    - RESUMPTION_CLASSES (resumption of in-person classes/work)
    - EXAM_WEEK (midterms, finals, departmental exams)
    - FRESHMEN_ORIENTATION (Thomasian welcome, freshmen week, onboarding)
-   - CIVIC_MAINTENANCE (tree trimming, road clearance, pruning)
-   - WEATHER_ADVISORY (pagasa warning, habagat, monsoon, typhoon)
+   - CIVIC_MAINTENANCE (tree trimming, road clearance, drainage declogging, number coding advisory, LTO/civic services)
+   - WEATHER_ADVISORY (pagasa warning, habagat, monsoon, typhoon, flooding status)
 
 6. TRUNCATED CAPTION HANDLING & RESILIENCE:
    - If the post caption text or OCR text ends abruptly or appears cut off with ellipses ('...') or trailing truncated words (e.g. "classes at al…"), evaluate available headline keywords (e.g. "Advisory", "Memorandum Circular No.", "In view of"), official organization name, and available image text.
@@ -92,6 +97,12 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - Routine non-disruptive administrative services (e.g. TOR/yearbook photoshoot schedules, student ID claiming, graduation pictorials, scholarship application forms, entrance exam online application deadlines, and student council helpdesk hotlines) do NOT cause transit crowd surges or classroom closures.
    - Do NOT classify routine photoshoots or online form deadlines as EXAM_WEEK, CLASS_SUSPENSION, or ONLINE_CLASS_SHIFT.
    - For routine photoshoots, application deadlines, and student council helpdesks, output category = null.
+
+9. TRAFFIC, NUMBER CODING, AND CIVIC CARAVAN ADVISORIES:
+   - MMDA or LGU announcements regarding "Suspension of Number Coding Scheme", "Expanded Number Coding", "Traffic Advisory", or "LTO Driving Course / Caravan" are municipal traffic/civic management notices.
+   - Category MUST be "lgu" (never "academic").
+   - event_code MUST be "CIVIC_MAINTENANCE".
+   - is_cancellation MUST be false.
 
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
