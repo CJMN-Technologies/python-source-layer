@@ -1,13 +1,14 @@
 name: LRT-2 Events Scraper Pipeline
 
 # ---------------------------------------------------------------------------
-# Schedule Strategy (free tier optimized & unified single-run scraping):
+# Tiered Scraping Schedule ($1/day budget)
 #
-# Runs all LRT-2 stations (Eastbound + Westbound) in a single Apify batch call.
-# Runs 3 times a day:
-#   4:00 AM PHT (20:00 UTC)
-#   11:00 AM PHT (03:00 UTC)
-#   4:00 PM PHT (08:00 UTC)
+# 3 runs per day, each with a different intensity:
+#   4:00 AM PHT (20:00 UTC) → AGGRESSIVE (24hr window, ~100 posts, ~$0.50)
+#   11:00 AM PHT (03:00 UTC) → MEDIUM     (8hr window,  ~57 posts,  ~$0.29)
+#   4:00 PM PHT (08:00 UTC) → LIGHT      (6hr window,  ~36 posts,  ~$0.18)
+#
+# Total daily: ~193 posts → ~$0.97/day → ~$29/month
 # ---------------------------------------------------------------------------
 
 on:
@@ -21,6 +22,10 @@ on:
         description: 'Batch to run (Eastbound, Westbound, or all)'
         required: false
         default: 'all'
+      mode:
+        description: 'Scrape mode (aggressive, medium, or light)'
+        required: false
+        default: 'medium'
 
 jobs:
   scrape-events:
@@ -43,6 +48,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r external-data-scraper/scraper/requirements.txt
 
+      - name: Determine scrape mode
+        id: scrape_mode
+        run: |
+          # For manual triggers, use the input value
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode || 'medium' }}" >> $GITHUB_OUTPUT
+            echo "Using manual mode: ${{ github.event.inputs.mode || 'medium' }}"
+            exit 0
+          fi
+          
+          # For scheduled triggers, determine mode based on UTC hour
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" = "20" ]; then
+            echo "mode=aggressive" >> $GITHUB_OUTPUT
+            echo "4 AM PHT → AGGRESSIVE mode (24hr window)"
+          elif [ "$HOUR" = "03" ]; then
+            echo "mode=medium" >> $GITHUB_OUTPUT
+            echo "11 AM PHT → MEDIUM mode (8hr window)"
+          elif [ "$HOUR" = "08" ]; then
+            echo "mode=light" >> $GITHUB_OUTPUT
+            echo "4 PM PHT → LIGHT mode (6hr window)"
+          else
+            echo "mode=medium" >> $GITHUB_OUTPUT
+            echo "Unknown hour ($HOUR), defaulting to MEDIUM"
+          fi
+
       - name: Run Events Pipeline
         env:
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
@@ -57,5 +88,6 @@ jobs:
         working-directory: ./external-data-scraper/scraper
         run: |
           BATCH="${{ github.event.inputs.batch || 'all' }}"
-          echo "Running pipeline for Batch: ${BATCH}"
-          python pipeline.py "${BATCH}"
+          MODE="${{ steps.scrape_mode.outputs.mode }}"
+          echo "Running pipeline → Batch: ${BATCH}, Mode: ${MODE}"
+          python pipeline.py "${BATCH}" --mode "${MODE}"

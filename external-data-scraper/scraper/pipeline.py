@@ -26,8 +26,32 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# Hard ceiling: strictly target the last 48 hours (2.0 days)
-MAX_AGE_DAYS = 2.0
+# ---------------------------------------------------------------------------
+# Tiered Scraping Modes ($1/day budget = ~200 posts/day)
+#
+# Each mode controls TWO knobs:
+#   1. max_age_days  — how far back to look for posts
+#   2. results_limit — how many posts to scrape per page (by tier)
+#
+# Tiers (defined per page in pages.json):
+#   "lgu"   = High-spam LGU pages (Manila, QC, Pasig, Marikina, etc.)
+#   "major" = Active university/student council pages
+#   "quiet" = Low-activity college pages
+# ---------------------------------------------------------------------------
+SCRAPE_MODE_CONFIGS = {
+    "aggressive": {
+        "max_age_days": 1.0,      # 24 hours
+        "limits": {"lgu": 6, "major": 3, "quiet": 2},  # ~100 posts
+    },
+    "medium": {
+        "max_age_days": 0.333,    # 8 hours
+        "limits": {"lgu": 3, "major": 2, "quiet": 1},  # ~57 posts
+    },
+    "light": {
+        "max_age_days": 0.25,     # 6 hours
+        "limits": {"lgu": 2, "major": 1, "quiet": 1},  # ~36 posts
+    },
+}
 
 # Default number of scrolls per page (can be overridden per page in pages.json)
 DEFAULT_MAX_SCROLLS = 6
@@ -205,11 +229,23 @@ def _determine_category(llm_res: dict, page: dict) -> str | None:
 
 
 
-def run_pipeline(batch: str = "all"):
+def run_pipeline(batch: str = "all", mode: str = "medium"):
+    mode = mode.lower()
+    if mode not in SCRAPE_MODE_CONFIGS:
+        print(f"Warning: Unknown scrape mode '{mode}', defaulting to 'medium'.")
+        mode = "medium"
+
+    config = SCRAPE_MODE_CONFIGS[mode]
+    max_age_days = config["max_age_days"]
+    tier_limits = config["limits"]
+
+    mode_labels = {"aggressive": "🔴 AGGRESSIVE", "medium": "🟡 MEDIUM", "light": "🟢 LIGHT"}
     print(f"=== LRT-2 Scraper Pipeline Starting [Batch: {batch.upper()}] ===")
+    print(f"Scrape Mode: {mode_labels.get(mode, mode.upper())}")
     print(f"Time (PHT): {datetime.now(timezone(timedelta(hours=8)))}")
     print(f"Time (UTC): {datetime.now(timezone.utc)}")
-    print(f"Max post age: {MAX_AGE_DAYS} days")
+    print(f"Max post age: {max_age_days} days ({max_age_days * 24:.0f} hours)")
+    print(f"Post limits → LGU: {tier_limits['lgu']}, Major: {tier_limits['major']}, Quiet: {tier_limits['quiet']}")
 
     # Load existing events for 3-Layer bulletproof deduplication
     existing_urls = set()
@@ -248,12 +284,20 @@ def run_pipeline(batch: str = "all"):
     pages = load_pages(batch)
     print(f"Pages to scrape in batch '{batch.upper()}': {len(pages)}")
 
-    # Single Apify Actor run with dynamic per-page limits (48-hour target)
+    # Inject dynamic results_limit per page based on tier + mode
+    for p in pages:
+        tier = p.get("tier", "quiet")
+        p["results_limit"] = tier_limits.get(tier, tier_limits.get("quiet", 1))
+
+    total_expected = sum(p["results_limit"] for p in pages)
+    print(f"Target posts to scrape: {total_expected} (~${total_expected * 0.005:.2f} est. cost)")
+
+    # Apify Actor run with tiered per-page limits
     scraped_data_by_url = scrape_pages_batch(
         pages=pages,
         existing_urls=existing_urls,
         existing_texts=existing_texts,
-        max_age_days=MAX_AGE_DAYS,
+        max_age_days=max_age_days,
     )
 
     total_saved = 0
@@ -272,9 +316,9 @@ def run_pipeline(batch: str = "all"):
             mask_ci_text(post.get("image_text"))
             mask_ci_text(post.get("source_url"))
 
-            # Hard age cutoff: strict 48 hours
-            if post_age_days is not None and post_age_days > MAX_AGE_DAYS:
-                print(f"  Skipped old post ({post_age_days:.1f} days > {MAX_AGE_DAYS}d limit).")
+            # Hard age cutoff based on scrape mode
+            if post_age_days is not None and post_age_days > max_age_days:
+                print(f"  Skipped old post ({post_age_days:.1f} days > {max_age_days}d limit).")
                 continue
 
             source_url = post.get("source_url", "")
@@ -408,10 +452,20 @@ def run_pipeline(batch: str = "all"):
 
 
 if __name__ == "__main__":
-    # Usage: python pipeline.py [batch]
-    # batch: A, B, C, D, or all (default: all)
+    # Usage: python pipeline.py [batch] [--mode aggressive|medium|light]
+    # batch: Eastbound, Westbound, or all (default: all)
+    # mode:  aggressive (4AM, 24hrs), medium (11AM, 8hrs), light (4PM, 6hrs)
     batch_arg = "all"
-    if len(sys.argv) > 1:
-        batch_arg = sys.argv[1].strip()
+    mode_arg = "medium"
 
-    run_pipeline(batch=batch_arg)
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--mode" and i + 1 < len(args):
+            mode_arg = args[i + 1].strip()
+            i += 2
+        else:
+            batch_arg = args[i].strip()
+            i += 1
+
+    run_pipeline(batch=batch_arg, mode=mode_arg)
