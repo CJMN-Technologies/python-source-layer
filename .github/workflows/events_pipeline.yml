@@ -1,16 +1,14 @@
 name: LRT-2 Events Scraper Pipeline
 
 # ---------------------------------------------------------------------------
-# Tiered Scraping Schedule (Budget: ~$1.29/day = ~$40/month)
+# Tiered Scraping Schedule ($1/day budget)
 #
-# Apify billing: Pay per event at $0.005/result (confirmed from dashboard).
+# 3 runs per day, each with a different intensity:
+#   4:00 AM PHT (20:00 UTC) → AGGRESSIVE (24hr window, ~100 posts, ~$0.50)
+#   11:00 AM PHT (03:00 UTC) → MEDIUM     (8hr window,  ~57 posts,  ~$0.29)
+#   4:00 PM PHT (08:00 UTC) → LIGHT      (6hr window,  ~36 posts,  ~$0.18)
 #
-# 3 runs per day, each with a purpose-built role:
-#   4:00 AM PHT (20:00 UTC) → STRONG  (24hr window, ~150 posts, ~$0.75)
-#   11:00 AM PHT (03:00 UTC) → MEDIUM  (8hr window,  ~72 posts,  ~$0.36)
-#   4:00 PM PHT (08:00 UTC) → LIGHT   (4hr window,  ~36 posts,  ~$0.18)
-#
-# Total daily: ~258 posts → ~$1.29/day → ~$40/month
+# Total daily: ~193 posts → ~$0.97/day → ~$29/month
 # ---------------------------------------------------------------------------
 
 on:
@@ -25,7 +23,7 @@ on:
         required: false
         default: 'all'
       mode:
-        description: 'Scrape mode (strong, medium, or light)'
+        description: 'Scrape mode (aggressive, medium, or light)'
         required: false
         default: 'medium'
 
@@ -55,22 +53,22 @@ jobs:
         run: |
           # For manual triggers, use the input value
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "mode=${{ github.event.inputs.mode || 'strong' }}" >> $GITHUB_OUTPUT
-            echo "Using manual mode: ${{ github.event.inputs.mode || 'strong' }}"
+            echo "mode=${{ github.event.inputs.mode || 'medium' }}" >> $GITHUB_OUTPUT
+            echo "Using manual mode: ${{ github.event.inputs.mode || 'medium' }}"
             exit 0
           fi
           
           # For scheduled triggers, determine mode based on UTC hour
           HOUR=$(date -u +%H)
           if [ "$HOUR" = "20" ]; then
-            echo "mode=strong" >> $GITHUB_OUTPUT
-            echo "4 AM PHT → STRONG mode (24hr window, ~150 posts, ~\$0.75)"
+            echo "mode=aggressive" >> $GITHUB_OUTPUT
+            echo "4 AM PHT → AGGRESSIVE mode (24hr window)"
           elif [ "$HOUR" = "03" ]; then
             echo "mode=medium" >> $GITHUB_OUTPUT
-            echo "11 AM PHT → MEDIUM mode (8hr window, ~72 posts, ~\$0.36)"
+            echo "11 AM PHT → MEDIUM mode (8hr window)"
           elif [ "$HOUR" = "08" ]; then
             echo "mode=light" >> $GITHUB_OUTPUT
-            echo "4 PM PHT → LIGHT mode (4hr window, ~36 posts, ~\$0.18)"
+            echo "4 PM PHT → LIGHT mode (6hr window)"
           else
             echo "mode=medium" >> $GITHUB_OUTPUT
             echo "Unknown hour ($HOUR), defaulting to MEDIUM"

@@ -82,17 +82,15 @@ Post categories:
 | `pagasa` | PAGASA weather bulletins relevant to NCR / LRT-2 catchment areas |
 | `academic_calendar` | A post sharing a full academic calendar document (triggers Excel generation + email) |
 
-## GitHub Actions Tiered Scraping Schedule
+## GitHub Actions Matrix System
 
-The events scraper runs **3 times per day** via GitHub Actions cron, each with a purpose-built role and intensity:
+The events scraper executes via a matrix strategy running across **Eastbound** and **Westbound** station clusters across **3 daily time windows**:
 
-| Run | Time (PHT) | Mode | Role | Window | Posts | Est. Cost |
-| --- | --- | --- | --- | --- | --- | --- |
-| Morning sweep | 4:00 AM (20:00 UTC) | `strong` | Primary daily sweep — catches all events from the past 24h | 24h | ~150 | ~$0.75 |
-| Mid-day catcher | 11:00 AM (03:00 UTC) | `medium` | Catches morning class suspensions + 4 AM cap overflows | 8h | ~72 | ~$0.36 |
-| Afternoon watchdog | 4:00 PM (08:00 UTC) | `light` | Late LGU advisories, afternoon road closures | 4h | ~36 | ~$0.18 |
+- **4:00 AM PHT** (20:00 UTC): Early morning class suspension and transport strike scanning
+- **11:00 AM PHT** (03:00 UTC): Midday weather, class, and afternoon activity adjustments
+- **4:00 PM PHT** (08:00 UTC): Evening advisories, next-day suspensions, and event updates
 
-**Budget:** ~258 posts/day → ~$1.29/day → ~**$40/month** (Apify Starter $29 + ~$11 overage at $0.005/result Pay-per-event billing, confirmed from Apify dashboard).
+The matrix automatically partitions your configured station target pages into non-overlapping batch runs (Eastbound & Westbound) executing concurrently on GitHub Actions.
 
 ## Environment Variables
 
