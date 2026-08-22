@@ -200,14 +200,13 @@ The calendar scraper scans university Facebook pages for academic calendar relea
 
 ## Batch System
 
-Pages in `pages.json` are assigned to batches A, B, C, or D. This system splits scraping across two GitHub Actions runs per day to stay within the free-tier budget:
+All 29 source pages are scraped in a single unified batch per run (Eastbound + Westbound combined). Pages are assigned to tiers in `pages.json` that control per-run post caps:
 
-| Time (PHT) | Batches | Approx Pages |
-| --- | --- | --- |
-| 6:00 AM | A, B | ~14 pages |
-| 3:00 PM | C, D | ~17 pages |
-
-Each page scan takes ~50 seconds (3 scrolls), totaling ~32 minutes/day (~960 min/month — well under the 2,000-minute free tier).
+| Tier | Pages | Examples | 4 AM cap | 11 AM cap | 4 PM cap |
+| --- | --- | --- | --- | --- | --- |
+| `lgu` | 7 | QC Gov, Manila PIO, Pasig PIO, Marikina PIO, etc. | 8 | 4 | 2 |
+| `major` | 14 | UST, UE, FEU, San Beda, PUP, Ateneo, UP, OLFU, etc. | 5 | 2 | 1 |
+| `quiet` | 8 | Stella Maris, TIP Cubao, WCC QC, UERM, St. Paul, etc. | 3 | 2 | 1 |
 
 ## Scheduling
 
@@ -229,10 +228,15 @@ The scheduler runs an initial scrape immediately on startup.
 
 **GitHub Actions** uses the root workflows:
 
-| Workflow | File | Schedule |
-| --- | --- | --- |
-| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:00 AM, 11:00 AM, and 4:00 PM PHT daily (3 time windows) |
-| Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT |
+| Workflow | File | Schedule | Mode | Role | Posts | Est. Cost |
+| --- | --- | --- | --- | --- | --- | --- |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:00 AM PHT (20:00 UTC) | `strong` | Full 24-hour sweep | ~150 | ~$0.75 |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 11:00 AM PHT (03:00 UTC) | `medium` | Mid-day surge catcher (8h) | ~72 | ~$0.36 |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:00 PM PHT (08:00 UTC) | `light` | Afternoon watchdog (4h) | ~36 | ~$0.18 |
+| Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | — | Academic calendar release detector | — | — |
+
+**Daily total:** ~258 posts → ~$1.29/day → ~$40/month (Apify Starter $29 + ~$11 overage).
+Apify billing model: **Pay per event at $0.005/result** (confirmed from dashboard).
 
 ## How Data Is Saved
 
