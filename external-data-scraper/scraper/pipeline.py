@@ -27,29 +27,64 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # ---------------------------------------------------------------------------
-# Tiered Scraping Modes ($1/day budget = ~200 posts/day)
+# Tiered Scraping Modes  (Budget: ~$1.29/day = ~$40/month)
 #
+# Apify billing is "Pay per event" at $0.005/result (confirmed from dashboard).
 # Each mode controls TWO knobs:
 #   1. max_age_days  — how far back to look for posts
 #   2. results_limit — how many posts to scrape per page (by tier)
 #
 # Tiers (defined per page in pages.json):
-#   "lgu"   = High-spam LGU pages (Manila, QC, Pasig, Marikina, etc.)
-#   "major" = Active university/student council pages
-#   "quiet" = Low-activity college pages
+#   "lgu"   = High-spam LGU pages (7 pages)  — Manila, QC, Pasig, Marikina, etc.
+#   "major" = Active university/SC pages (14 pages) — UST, UE, Ateneo, UP, etc.
+#   "quiet" = Low-activity college pages (8 pages) — Stella Maris, TIP, WCC, etc.
+#
+# Schedule (PHT) → Mode:
+#   4:00 AM (20:00 UTC) → strong   — Full 24h sweep, max caps for burst-day coverage
+#   11:00 AM (03:00 UTC) → medium  — Mid-day surge catcher, 8h window
+#   4:00 PM (08:00 UTC) → light    — Afternoon watchdog, 4h window
+#
+# Cost breakdown per day:
+#   strong : 7×8 + 14×5 + 8×3 = 150 posts × $0.005 = ~$0.75
+#   medium : 7×4 + 14×2 + 8×2 = 72  posts × $0.005 = ~$0.36
+#   light  : 7×2 + 14×1 + 8×1 = 36  posts × $0.005 = ~$0.18
+#   Total  : ~258 posts/day → ~$1.29/day → ~$40/month
 # ---------------------------------------------------------------------------
 SCRAPE_MODE_CONFIGS = {
-    "aggressive": {
+    # -----------------------------------------------------------------------
+    # STRONG — 4:00 AM PHT (20:00 UTC)
+    # Primary daily sweep: 24-hour window, highest caps.
+    # Sized to handle typhoon/semester-start burst days on LGU and major pages.
+    # -----------------------------------------------------------------------
+    "strong": {
         "max_age_days": 1.0,      # 24 hours
-        "limits": {"lgu": 6, "major": 3, "quiet": 2},  # ~100 posts
+        "limits": {"lgu": 8, "major": 5, "quiet": 3},  # ~150 posts, ~$0.75
     },
+    # -----------------------------------------------------------------------
+    # MEDIUM — 11:00 AM PHT (03:00 UTC)
+    # Mid-day surge catcher: 8-hour window (3 AM–11 AM PHT).
+    # Catches morning class-suspension posts + anything the 4 AM cap missed.
+    # -----------------------------------------------------------------------
     "medium": {
         "max_age_days": 0.333,    # 8 hours
-        "limits": {"lgu": 3, "major": 2, "quiet": 1},  # ~57 posts
+        "limits": {"lgu": 4, "major": 2, "quiet": 2},  # ~72 posts, ~$0.36
     },
+    # -----------------------------------------------------------------------
+    # LIGHT — 4:00 PM PHT (08:00 UTC)
+    # Afternoon watchdog: 4-hour window (12 PM–4 PM PHT).
+    # Catches late LGU advisories and afternoon road closure notices.
+    # -----------------------------------------------------------------------
     "light": {
-        "max_age_days": 0.25,     # 6 hours
-        "limits": {"lgu": 2, "major": 1, "quiet": 1},  # ~36 posts
+        "max_age_days": 0.167,    # 4 hours
+        "limits": {"lgu": 2, "major": 1, "quiet": 1},  # ~36 posts, ~$0.18
+    },
+    # -----------------------------------------------------------------------
+    # AGGRESSIVE — backward-compatibility alias for "strong"
+    # Use "strong" in new code. This alias ensures old manual triggers still work.
+    # -----------------------------------------------------------------------
+    "aggressive": {
+        "max_age_days": 1.0,
+        "limits": {"lgu": 8, "major": 5, "quiet": 3},  # same as strong
     },
 }
 
@@ -239,7 +274,7 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
     max_age_days = config["max_age_days"]
     tier_limits = config["limits"]
 
-    mode_labels = {"aggressive": "🔴 AGGRESSIVE", "medium": "🟡 MEDIUM", "light": "🟢 LIGHT"}
+    mode_labels = {"strong": "🔴 STRONG", "aggressive": "🔴 STRONG", "medium": "🟡 MEDIUM", "light": "🟢 LIGHT"}
     print(f"=== LRT-2 Scraper Pipeline Starting [Batch: {batch.upper()}] ===")
     print(f"Scrape Mode: {mode_labels.get(mode, mode.upper())}")
     print(f"Time (PHT): {datetime.now(timezone(timedelta(hours=8)))}")
@@ -452,9 +487,9 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
 
 
 if __name__ == "__main__":
-    # Usage: python pipeline.py [batch] [--mode aggressive|medium|light]
+    # Usage: python pipeline.py [batch] [--mode strong|medium|light]
     # batch: Eastbound, Westbound, or all (default: all)
-    # mode:  aggressive (4AM, 24hrs), medium (11AM, 8hrs), light (4PM, 6hrs)
+    # mode:  strong (4AM PHT, 24h, ~$0.75), medium (11AM PHT, 8h, ~$0.36), light (4PM PHT, 4h, ~$0.18)
     batch_arg = "all"
     mode_arg = "medium"
 
