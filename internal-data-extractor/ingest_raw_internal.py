@@ -184,20 +184,24 @@ def connection_kwargs() -> Dict[str, Any]:
         or os.getenv("SUPABASE_SSL_ROOT_CERT")
         or str(DEFAULT_SSL_ROOT_CERT)
     )
-    if not Path(ssl_root_cert).exists():
-        raise RuntimeError("Missing Supabase SSL root certificate file.")
 
-    return {
+    kwargs: Dict[str, Any] = {
         "dbname": parsed["dbname"],
         "user": parsed["user"],
         "password": parsed["password"],
         "host": parsed["host"],
         "port": parsed["port"],
-        "sslmode": "verify-full",
-        "sslrootcert": ssl_root_cert,
         "connect_timeout": 15,
         "application_name": "secure_lrt_ingest",
     }
+
+    if ssl_root_cert and Path(ssl_root_cert).exists():
+        kwargs["sslmode"] = "verify-full"
+        kwargs["sslrootcert"] = ssl_root_cert
+    else:
+        kwargs["sslmode"] = "require"
+
+    return kwargs
 
 
 def normalize_identifier(value: Any) -> str:
@@ -580,7 +584,14 @@ def create_year_table(
     year: int,
     station_columns: Sequence[str],
 ) -> None:
-    table = sql.Identifier(SCHEMA_NAME, table_name_for_year(year))
+    main_table_name = table_name_for_year(year)
+    backup_table_name = f"{main_table_name}_backup"
+
+    tables = [
+        sql.Identifier(SCHEMA_NAME, main_table_name),
+        sql.Identifier(SCHEMA_NAME, backup_table_name),
+    ]
+
     ridership_defs = [
         sql.SQL("{} INTEGER CHECK ({} IS NULL OR {} >= 0)").format(
             sql.Identifier(column),
@@ -590,29 +601,30 @@ def create_year_table(
         for column in station_columns
     ]
 
-    cursor.execute(
-        sql.SQL(
-            """
-            CREATE TABLE IF NOT EXISTS {table} (
-                id TEXT PRIMARY KEY,
-                date DATE NOT NULL,
-                time_period TEXT NOT NULL CHECK (length(time_period) <= 64),
-                {ridership_columns},
-                load_timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        ).format(table=table, ridership_columns=sql.SQL(",\n                ").join(ridership_defs))
-    )
-
-    for column in station_columns:
+    for table in tables:
         cursor.execute(
             sql.SQL(
-                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} "
-                "INTEGER CHECK ({column} IS NULL OR {column} >= 0)"
-            ).format(table=table, column=sql.Identifier(column))
+                """
+                CREATE TABLE IF NOT EXISTS {table} (
+                    id TEXT PRIMARY KEY,
+                    date DATE NOT NULL,
+                    time_period TEXT NOT NULL CHECK (length(time_period) <= 64),
+                    {ridership_columns},
+                    load_timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            ).format(table=table, ridership_columns=sql.SQL(",\n                ").join(ridership_defs))
         )
 
-    cursor.execute(sql.SQL("REVOKE ALL ON TABLE {table} FROM PUBLIC").format(table=table))
+        for column in station_columns:
+            cursor.execute(
+                sql.SQL(
+                    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} "
+                    "INTEGER CHECK ({column} IS NULL OR {column} >= 0)"
+                ).format(table=table, column=sql.Identifier(column))
+            )
+
+        cursor.execute(sql.SQL("REVOKE ALL ON TABLE {table} FROM PUBLIC").format(table=table))
 
 
 def build_insert_records(
@@ -644,19 +656,30 @@ def insert_year_rows(
     if not records:
         return
 
+    main_table_name = table_name_for_year(year)
+    backup_table_name = f"{main_table_name}_backup"
+
+    tables = [
+        sql.Identifier(SCHEMA_NAME, main_table_name),
+        sql.Identifier(SCHEMA_NAME, backup_table_name),
+    ]
+
     columns = ["id", "date", "time_period", *station_columns]
-    statement = sql.SQL(
-        """
-        INSERT INTO {table} ({columns})
-        VALUES ({placeholders})
-        ON CONFLICT (id) DO NOTHING
-        """
-    ).format(
-        table=sql.Identifier(SCHEMA_NAME, table_name_for_year(year)),
-        columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
-        placeholders=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
-    )
-    execute_batch(cursor, statement.as_string(cursor), records, page_size=BATCH_SIZE)
+
+    for table in tables:
+        statement = sql.SQL(
+            """
+            INSERT INTO {table} ({columns})
+            VALUES ({placeholders})
+            ON CONFLICT (id) DO UPDATE SET
+                load_timestamp = CURRENT_TIMESTAMP
+            """
+        ).format(
+            table=table,
+            columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+            placeholders=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        )
+        execute_batch(cursor, statement.as_string(cursor), records, page_size=BATCH_SIZE)
 
 
 def ingest_files(sources: Iterable[SourceFile]) -> None:
@@ -713,9 +736,26 @@ def ingest_files(sources: Iterable[SourceFile]) -> None:
 
 
 def main() -> int:
+    import sys
     configure_logging()
     try:
-        ingest_files(discover_input_files(DATA_DIR))
+        if len(sys.argv) > 1:
+            files_to_ingest: List[SourceFile] = []
+            for arg in sys.argv[1:]:
+                p = Path(arg).resolve()
+                if p.is_file():
+                    src = parse_source_file(p)
+                    if src:
+                        files_to_ingest.append(src)
+                    else:
+                        LOGGER.warning("File %s did not match expected AFCS monthly pattern.", p.name)
+                elif p.is_dir():
+                    files_to_ingest.extend(discover_input_files(p))
+            if not files_to_ingest:
+                raise ValueError("No valid AFCS source files found in CLI arguments.")
+            ingest_files(files_to_ingest)
+        else:
+            ingest_files(discover_input_files(DATA_DIR))
     except Exception as error:
         LOGGER.error("Ingestion stopped securely. error_type=%s", safe_error_code(error))
         return 1
