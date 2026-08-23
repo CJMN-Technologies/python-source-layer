@@ -665,6 +665,8 @@ def insert_year_rows(
     ]
 
     columns = ["id", "date", "time_period", *station_columns]
+    # All columns that should be overwritten on re-ingestion (every column except the PK)
+    update_columns = ["date", "time_period", *station_columns]
 
     for table in tables:
         statement = sql.SQL(
@@ -672,12 +674,17 @@ def insert_year_rows(
             INSERT INTO {table} ({columns})
             VALUES ({placeholders})
             ON CONFLICT (id) DO UPDATE SET
+                {updates},
                 load_timestamp = CURRENT_TIMESTAMP
             """
         ).format(
             table=table,
             columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
             placeholders=sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+            updates=sql.SQL(", ").join(
+                sql.SQL("{col} = EXCLUDED.{col}").format(col=sql.Identifier(column))
+                for column in update_columns
+            ),
         )
         execute_batch(cursor, statement.as_string(cursor), records, page_size=BATCH_SIZE)
 
@@ -733,6 +740,16 @@ def ingest_files(sources: Iterable[SourceFile]) -> None:
 
             if failed_years:
                 raise RuntimeError("One or more years failed during ingestion.")
+
+            # Defense-in-depth: Auto-rebuild Analytics views if stored functions exist
+            try:
+                cursor.execute('SELECT "Analytics".rebuild_vw_hourly_actuals();')
+                cursor.execute('SELECT "Analytics".rebuild_vw_predictive_features();')
+                connection.commit()
+                LOGGER.info("Successfully refreshed Analytics views for all ingested years.")
+            except Exception as view_err:
+                connection.rollback()
+                LOGGER.debug("Analytics view rebuild skipped (functions may not be initialized yet): %s", view_err)
 
 
 def main() -> int:
