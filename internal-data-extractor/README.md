@@ -41,7 +41,6 @@ internal-data-extractor/
 |   `-- read_data/
 |       `-- Internal/             # Successfully processed files are archived here
 |-- ingest_raw_internal.py        # AFCS ridership ingestion
-|-- ingest_student_transaction.py # Student transaction ingestion
 |-- ingest_station_platform_capacity.py  # Station capacity ingestion
 |-- ingest_psor_incidents.py      # PSOR incident ingestion
 |-- run_all_ingestions.py         # Master runner (runs all scripts in sequence)
@@ -56,7 +55,6 @@ internal-data-extractor/
 | Script | Dataset | Target Schema/Table | Key Validations |
 | --- | --- | --- | --- |
 | `ingest_raw_internal.py` | AFCS ridership files by month/year | `AFCS.ridership_<year>` | Required columns, date parsing, numeric fields |
-| `ingest_student_transaction.py` | Student transaction counts | `AFCS.student_transactions` | Required columns, date/numeric validation |
 | `ingest_station_platform_capacity.py` | Station and platform capacity data | `Station Capacity.station_platform_capacity` | Required columns, capacity values |
 | `ingest_psor_incidents.py` | PSOR incident records | `PSOR.psor_incidents` | Required columns, text field validation |
 | `run_all_ingestions.py` | Runs all internal ingestion scripts in sequence | Orchestration only | Stops on first failure |
@@ -113,9 +111,8 @@ python run_all_ingestions.py
 Current order:
 
 1. `ingest_raw_internal.py`
-2. `ingest_student_transaction.py`
-3. `ingest_station_platform_capacity.py`
-4. `ingest_psor_incidents.py`
+2. `ingest_station_platform_capacity.py`
+3. `ingest_psor_incidents.py`
 
 The runner stops if any script fails.
 
@@ -123,7 +120,6 @@ The runner stops if any script fails.
 
 ```bash
 python ingest_raw_internal.py
-python ingest_student_transaction.py
 python ingest_station_platform_capacity.py
 python ingest_psor_incidents.py
 ```

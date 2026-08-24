@@ -11,7 +11,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 
 SCRIPTS: Sequence[Path] = (
     SCRIPT_DIR / "ingest_raw_internal.py",
-    SCRIPT_DIR / "ingest_student_transaction.py",
     SCRIPT_DIR / "ingest_station_platform_capacity.py",
     SCRIPT_DIR / "ingest_psor_incidents.py",
 )
