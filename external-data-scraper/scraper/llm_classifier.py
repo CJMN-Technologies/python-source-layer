@@ -178,6 +178,19 @@ CATEGORY null (reject — not relevant):
                             if data.get("category") not in valid_cats:
                                 data["category"] = None
 
+                            # Year sanity guardrail: replace past template years (e.g. 2020) with ref_year
+                            if data.get("event_date") and isinstance(data["event_date"], str):
+                                import re
+                                try:
+                                    def _fix_year(match):
+                                        y = int(match.group(0))
+                                        if y < (ref_year - 1) or y > (ref_year + 1):
+                                            return str(ref_year)
+                                        return str(y)
+                                    data["event_date"] = re.sub(r"\b20\d{2}\b", _fix_year, data["event_date"])
+                                except Exception:
+                                    pass
+
                             return data
                         except json.JSONDecodeError:
                             pass
