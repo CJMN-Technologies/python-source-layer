@@ -447,7 +447,7 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                     "source_url":               source_url,
                     "post_text":                post["text"][:5000],
                     "image_text":               post["image_text"][:5000] if post["image_text"] else None,
-                    "category":                 category,
+                    "category":                 "academic" if category in ("acad", "academic", "academic_calendar") else ("lgu" if category == "lgu" else category),
                     "event_name":               event_name[:500] if event_name else None,
                     "event_date":               event_date[:100] if event_date else None,
                     "event_code":               llm_res.get("event_code"),

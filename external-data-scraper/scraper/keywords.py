@@ -238,6 +238,48 @@ ARENA_EVENT_KEYWORDS = [
     "boxing match",
     "k-pop concert",
     "fans event",
+    "teknolodi fest",
+    "buwan ng kabataan",
+    "youth fest",
+    "youth festival",
+    "youth summit",
+    "sk federation",
+    "culminating celebration",
+    "inter-barangay league",
+    "cheerdance competition",
+    "esports tournament",
+]
+
+# ---------------------------------------------------------------------------
+# GROUP 5B — NON-DISRUPTIVE HEALTH & COMMUNITY RELIEF EXCLUSIONS
+# Posts containing strictly medical/relief info should not trigger weather flags
+# ---------------------------------------------------------------------------
+HEALTH_MEDICAL_EXCLUSION_KEYWORDS = [
+    "leptospirosis",
+    "doxycycline",
+    "prophylaxis",
+    "w.i.l.d. disease",
+    "wild disease",
+    "dengue surveillance",
+    "bakuna",
+    "vaccination",
+    "anti-rabies",
+    "medical mission",
+    "blood donation",
+    "breast exam",
+    "dental mission",
+    "health center distribution",
+]
+
+COMMUNITY_RELIEF_EXCLUSION_KEYWORDS = [
+    "relief operation",
+    "relief goods",
+    "pamamahagi ng relief",
+    "food pack",
+    "donation drive",
+    "iskoops",
+    "ipinamahagi",
+    "namahagi ng relief",
 ]
 
 # ---------------------------------------------------------------------------
@@ -421,6 +463,20 @@ def classify_post(text: str) -> str | None:
     arena_match = any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
     train_match = any(kw.casefold() in lowered for kw in TRAIN_DEGRADATION_KEYWORDS)
     academic_context = any(kw.casefold() in lowered for kw in ACADEMIC_CONTEXT_KEYWORDS)
+
+    # Health / Medical Prophylaxis and Community Relief Distribution Exclusions
+    # If a post is strictly health advice (Leptospirosis/Doxycycline) or post-flood food relief distribution
+    # and does NOT contain active suspension, strike, or arena keywords, reject early.
+    has_health_exclusion = any(kw.casefold() in lowered for kw in HEALTH_MEDICAL_EXCLUSION_KEYWORDS)
+    has_relief_exclusion = any(kw.casefold() in lowered for kw in COMMUNITY_RELIEF_EXCLUSION_KEYWORDS)
+    has_hard_disruption = (
+        any(kw.casefold() in lowered for kw in CLASS_SUSPENSION_KEYWORDS)
+        or any(kw.casefold() in lowered for kw in TRANSPORT_DISRUPTION_KEYWORDS)
+        or any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
+    )
+
+    if (has_health_exclusion or has_relief_exclusion) and not has_hard_disruption:
+        return None
 
     # Traffic / Number coding / Caravan advisories always route to LGU
     if any(k in lowered for k in ["number coding", "coding scheme", "abiso sa mga motorista", "abiso mula sa mmda", "lto caravan", "theoretical driving course"]):

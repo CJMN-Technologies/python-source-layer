@@ -82,6 +82,7 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - RESUMPTION_CLASSES (resumption of in-person classes/work)
    - EXAM_WEEK (midterms, finals, departmental exams)
    - FRESHMEN_ORIENTATION (Thomasian welcome, freshmen week, onboarding)
+   - MAJOR_ARENA_EVENT (concerts, youth festivals, technology fests, sports events, arena tournaments)
    - CIVIC_MAINTENANCE (tree trimming, road clearance, drainage declogging, number coding advisory, LTO/civic services)
    - WEATHER_ADVISORY (pagasa warning, habagat, monsoon, typhoon, flooding status)
 
@@ -104,6 +105,20 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - event_code MUST be "CIVIC_MAINTENANCE".
    - is_cancellation MUST be false.
 
+10. HEALTH, MEDICAL & EPIDEMIC SURVEILLANCE NOTICES (STRICT NEGATIVE RULE):
+   - Routine public health advisories (e.g. Leptospirosis warnings, Doxycycline prophylaxis distribution, dengue surveillance, vaccination drives, medical missions) issued after storms/floods are medical advisory notices, NOT active transit disruption events.
+   - Even if the post mentions floodwaters ("baha", "habagat", "pag-ulan"), NEVER classify it as WEATHER_ADVISORY!
+   - For routine health advisories and medicine distributions, output category = null (reject — no transit disruption) or event_code = "CIVIC_MAINTENANCE".
+
+11. YOUTH, CULTURAL, AND TECHNOLOGY FESTIVALS vs WEATHER DISRUPTIONS:
+   - Youth summits, technology festivals (e.g. Teknolodi Fest, Buwan ng Kabataan), esports events, and student assemblies are civic/cultural gatherings.
+   - If held at major sports complexes or public venues attracting transit commuters, classify with category = "lgu" or "academic", event_code = "MAJOR_ARENA_EVENT".
+   - NEVER classify youth festivals, cultural celebrations, or student conferences as WEATHER_ADVISORY!
+
+12. DISASTER RELIEF OPERATIONS & DONATION DRIVES:
+   - Community donation drives, soup kitchens, and relief goods distribution (#IskoOps, volunteer food pack distributions) conducted after severe weather are community aid activities, NOT transit disruption events.
+   - Output category = null (reject — not an active transport disruption).
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 
@@ -112,7 +127,7 @@ CATEGORY "lgu":
   - Mid-Day / Full Class Suspension announced by LGU
   - Torrential Rain / Orange or Red PAGASA Warning / Signal No. 2+
   - Tree Trimming / Road Clearance / Obstruction
-  - Major Arena / Concert Event (Smart Araneta, PhilSports, MOA Arena)
+  - Major Arena / Concert / Youth Festival Event (Smart Araneta, PhilSports, MOA Arena, San Andres Complex)
   - LRT-2 Code Yellow / Service Delay / Degraded Headway
   - State of Calamity / Disaster Declarations
   - Weather advisories (Habagat, Amihan, Monsoon, Baha)
@@ -133,6 +148,8 @@ CATEGORY "academic_calendar":
 CATEGORY null (reject — not relevant):
   - Student council political commentary, statements of solidarity, corruption critiques, or petitions lacking official university administrative declaration.
   - Routine administrative notices (TOR photoshoots, student ID claiming, scholarship forms, entrance exam form deadlines, student council helpdesks).
+  - Health/medical notices, post-flood doxycycline distribution, epidemic alerts (Leptospirosis, dengue).
+  - Post-disaster relief operations, volunteer drives, food pack distribution.
   - Generic greetings, food/merchandise promos, job ads, alumni news with no commuter impact.
 
 === EXTRACTION RULES ===
