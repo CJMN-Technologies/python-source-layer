@@ -87,13 +87,13 @@ Post categories:
 
 ## GitHub Actions Tiered Scraping Schedule
 
-The events scraper runs **3 times per day** via GitHub Actions cron, each with a purpose-built role and intensity:
+The events scraper runs **3 times per day** via GitHub Actions cron (scheduled at off-peak minutes to avoid global runner queue contention), each with a purpose-built role and intensity:
 
 | Run | Time (PHT) | Mode | Role | Window | Posts | Est. Cost |
 | --- | --- | --- | --- | --- | --- | --- |
-| Morning sweep | 4:00 AM (20:00 UTC) | `strong` | Primary daily sweep — catches all events from the past 24h | 24h | ~150 | ~$0.75 |
-| Mid-day catcher | 11:00 AM (03:00 UTC) | `medium` | Catches morning class suspensions + 4 AM cap overflows | 8h | ~72 | ~$0.36 |
-| Afternoon watchdog | 4:00 PM (08:00 UTC) | `light` | Late LGU advisories, afternoon road closures | 4h | ~36 | ~$0.18 |
+| Morning sweep | 4:18 AM (20:18 UTC) | `strong` | Primary daily sweep — catches all events from the past 24h | 24h | ~150 | ~$0.75 |
+| Mid-day catcher | 11:23 AM (03:23 UTC) | `medium` | Catches morning class suspensions + 4 AM cap overflows | 8h | ~72 | ~$0.36 |
+| Afternoon watchdog | 4:14 PM (08:14 UTC) | `light` | Late LGU advisories, afternoon road closures | 4h | ~36 | ~$0.18 |
 
 **Budget:** ~258 posts/day → ~$1.29/day → ~**$40/month** (Apify Starter $29 + ~$11 overage at $0.005/result Pay-per-event billing, confirmed from Apify dashboard).
 
@@ -122,7 +122,7 @@ The active workflow files are in `.github/workflows/` at the repository root:
 
 | Workflow | File | Schedule | Purpose |
 | --- | --- | --- | --- |
-| Events Pipeline | `events_pipeline.yml` | 4:00 AM, 11:00 AM, and 4:00 PM PHT daily (3 time windows) | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
+| Events Pipeline | `events_pipeline.yml` | 4:18 AM, 11:23 AM, and 4:14 PM PHT daily (3 off-peak windows) | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
 | Calendar Scraper | `calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | Scrapes for academic calendar releases, generates `.xlsx` files, and auto-commits them to the repo. |
 | Weather Pipeline | `weather_pipeline.yml` | Hourly from 5:00 AM to 10:00 PM PHT (`0 21-23,0-14 * * *`) | Updates current weather observations and 7-day forecasts for all 13 LRT-2 stations. |
 | Weather Watchdog | `weather_watchdog_pipeline.yml` | Half-hourly backup from 5:30 AM to 10:30 PM PHT (`30 21-23,0-14 * * *`) | Secondary failover watchdog ensuring station weather metrics remain updated. |

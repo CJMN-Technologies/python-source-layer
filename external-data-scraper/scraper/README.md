@@ -230,9 +230,9 @@ The scheduler runs an initial scrape immediately on startup.
 
 | Workflow | File | Schedule | Mode | Role | Posts | Est. Cost |
 | --- | --- | --- | --- | --- | --- | --- |
-| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:00 AM PHT (20:00 UTC) | `strong` | Full 24-hour sweep | ~150 | ~$0.75 |
-| Events Pipeline | `.github/workflows/events_pipeline.yml` | 11:00 AM PHT (03:00 UTC) | `medium` | Mid-day surge catcher (8h) | ~72 | ~$0.36 |
-| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:00 PM PHT (08:00 UTC) | `light` | Afternoon watchdog (4h) | ~36 | ~$0.18 |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:18 AM PHT (20:18 UTC) | `strong` | Full 24-hour sweep | ~150 | ~$0.75 |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 11:23 AM PHT (03:23 UTC) | `medium` | Mid-day surge catcher (8h) | ~72 | ~$0.36 |
+| Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:14 PM PHT (08:14 UTC) | `light` | Afternoon watchdog (4h) | ~36 | ~$0.18 |
 | Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | — | Academic calendar release detector | — | — |
 
 **Daily total:** ~258 posts → ~$1.29/day → ~$40/month (Apify Starter $29 + ~$11 overage).
