@@ -5,19 +5,19 @@ name: LRT-2 Events Scraper Pipeline
 #
 # Apify billing: Pay per event at $0.005/result (confirmed from dashboard).
 #
-# 3 runs per day, each with a purpose-built role (scheduled at off-peak minutes to avoid GitHub Actions runner queue contention):
-#   4:18 AM PHT (20:18 UTC) → STRONG  (24hr window, ~150 posts, ~$0.75)
-#   11:23 AM PHT (03:23 UTC) → MEDIUM  (8hr window,  ~72 posts,  ~$0.36)
-#   4:14 PM PHT (08:14 UTC) → LIGHT   (4hr window,  ~36 posts,  ~$0.18)
+# Triggered externally via cron-job.org for exact timing (no GitHub cron delays):
+#   4:00 AM PHT  → STRONG  (24hr window, ~150 posts, ~$0.75)
+#   11:00 AM PHT → MEDIUM  (8hr window,  ~72 posts,  ~$0.36)
+#   4:00 PM PHT  → LIGHT   (4hr window,  ~36 posts,  ~$0.18)
 #
 # Total daily: ~258 posts → ~$1.29/day → ~$40/month
+#
+# NOTE: GitHub's built-in cron scheduler was removed due to unreliable
+# delays (up to 6 hours). cron-job.org triggers workflow_dispatch via
+# GitHub API for exact-second precision.
 # ---------------------------------------------------------------------------
 
 on:
-  schedule:
-    - cron: '18 20 * * *'
-    - cron: '23 3 * * *'
-    - cron: '14 8 * * *'
   workflow_dispatch:
     inputs:
       batch:
@@ -53,29 +53,9 @@ jobs:
       - name: Determine scrape mode
         id: scrape_mode
         run: |
-          # For manual triggers, use the input value
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "mode=${{ github.event.inputs.mode || 'strong' }}" >> $GITHUB_OUTPUT
-            echo "Using manual mode: ${{ github.event.inputs.mode || 'strong' }}"
-            exit 0
-          fi
-
-          # For scheduled triggers, determine mode based on github.event.schedule to handle runner delays robustly
-          SCHEDULE="${{ github.event.schedule }}"
-          echo "Scheduled cron: $SCHEDULE"
-          if [ "$SCHEDULE" = "18 20 * * *" ]; then
-            echo "mode=strong" >> $GITHUB_OUTPUT
-            echo "4:18 AM PHT cron triggered -> STRONG mode (24hr window, ~150 posts, ~\$0.75)"
-          elif [ "$SCHEDULE" = "23 3 * * *" ]; then
-            echo "mode=medium" >> $GITHUB_OUTPUT
-            echo "11:23 AM PHT cron triggered -> MEDIUM mode (8hr window, ~72 posts, ~\$0.36)"
-          elif [ "$SCHEDULE" = "14 8 * * *" ]; then
-            echo "mode=light" >> $GITHUB_OUTPUT
-            echo "4:14 PM PHT cron triggered -> LIGHT mode (4hr window, ~36 posts, ~\$0.18)"
-          else
-            echo "mode=medium" >> $GITHUB_OUTPUT
-            echo "Unknown cron ($SCHEDULE), defaulting to MEDIUM"
-          fi
+          MODE="${{ github.event.inputs.mode || 'strong' }}"
+          echo "mode=${MODE}" >> $GITHUB_OUTPUT
+          echo "Scrape mode: ${MODE}"
 
       - name: Run Events Pipeline
         env:
