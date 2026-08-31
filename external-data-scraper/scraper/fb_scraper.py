@@ -80,7 +80,8 @@ def extract_text_from_image(img_url: str) -> str:
                 OCR_CACHE[img_url] = cleaned
                 return cleaned
             except Exception as ke:
-                if "quota" in str(ke).lower() or "429" in str(ke):
+                err_str = str(ke).lower()
+                if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str or "rate" in err_str:
                     continue
                 break
     except Exception:

@@ -40,6 +40,7 @@ CLASS_SUSPENSION_KEYWORDS = [
     "class resumption",
     "no classes and work",
     "no classes and office work",
+    # English — modality shifts
     "asynchronous classes",
     "shift to online classes",
     "online classes",
@@ -47,6 +48,12 @@ CLASS_SUSPENSION_KEYWORDS = [
     "distance learning",
     "modular classes",
     "blended learning",
+    "enriched virtual mode of instruction",
+    "enriched virtual mode",
+    "enriched virtual",
+    "evm of instruction",
+    "evm modality",
+    "shift to evm",
     # English — holidays
     "regular holiday",
     "special non-working holiday",
@@ -354,6 +361,10 @@ ACADEMIC_CALENDAR_KEYWORDS = [
     "office transactions",
     "evm",
     "remote learning",
+    "office of the secretary-general",
+    "secretary-general",
+    "keep safe thomasians",
+    "stay safe thomasians",
     "advisory",
     "announcement",
     "notice",
@@ -431,6 +442,25 @@ ACADEMIC_CONTEXT_KEYWORDS = [
     "enrollment",
     "exam",
     "graduation",
+    # Specific LRT-2 corridor institutions & Thomasian demographics
+    "ust",
+    "thomasian",
+    "thomasians",
+    "santo tomas",
+    "ustadvisory",
+    "cloud campus",
+    "feu",
+    "tamaraw",
+    "ue",
+    "warriors",
+    "pup",
+    "iskolar",
+    "bedan",
+    "san beda",
+    "ateneo",
+    "blue eagle",
+    "up diliman",
+    "maroons",
 ]
 
 
@@ -440,7 +470,7 @@ def _casefold_match(keyword_list: list[str], text: str) -> bool:
     return any(kw.casefold() in casefolded for kw in keyword_list)
 
 
-def classify_post(text: str) -> str | None:
+def classify_post(text: str, source_type: str | None = None) -> str | None:
     """
     Pre-classify a post using keyword matching (before LLM call).
     Uses .casefold() for case-insensitive matching across:
@@ -448,6 +478,9 @@ def classify_post(text: str) -> str | None:
       - Title Case: No Classes, Walang Pasok
       - lowercase:  no classes, walang pasok
       - Mixed:      NO Classes, WALANG Pasok
+
+    If source_type == "academic", the post automatically inherits academic context
+    when an academic keyword (e.g. advisory, announcement, notice, evm) is present.
 
     Returns: 'academic', 'lgu', 'transport', 'arena', or None.
     """
@@ -462,7 +495,12 @@ def classify_post(text: str) -> str | None:
     transport_match = any(kw.casefold() in lowered for kw in TRANSPORT_DISRUPTION_KEYWORDS)
     arena_match = any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
     train_match = any(kw.casefold() in lowered for kw in TRAIN_DEGRADATION_KEYWORDS)
-    academic_context = any(kw.casefold() in lowered for kw in ACADEMIC_CONTEXT_KEYWORDS)
+    
+    is_academic_source = (source_type == "academic")
+    academic_context = (
+        is_academic_source
+        or any(kw.casefold() in lowered for kw in ACADEMIC_CONTEXT_KEYWORDS)
+    )
 
     # Health / Medical Prophylaxis and Community Relief Distribution Exclusions
     # If a post is strictly health advice (Leptospirosis/Doxycycline) or post-flood food relief distribution

@@ -381,7 +381,7 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                     continue
 
             # PRE-FILTER with keywords (case-insensitive via classify_post using .casefold())
-            pre_category = classify_post(combined)
+            pre_category = classify_post(combined, source_type=page.get("source_type"))
             if pre_category is None:
                 continue
 
