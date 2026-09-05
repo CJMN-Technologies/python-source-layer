@@ -7,6 +7,7 @@ from typing import Optional
 
 # Local imports
 from fb_scraper import _get_gemini_keys
+from gemini_model_resolver import get_gemini_models
 
 
 class PostClassification(BaseModel):
@@ -165,8 +166,8 @@ CATEGORY null (reject — not relevant):
         print("Warning: No Gemini API keys found for LLM classification.")
         return {"category": None, "event_name": None, "event_date": None}
 
-    # Model fallback: start with cheapest to conserve quota
-    models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash"]
+    # Model fallback: dynamically discovered models (prioritizes stable aliases and latest flash versions)
+    models_to_try = get_gemini_models(task="text")
 
     for attempt in range(3):  # up to 3 retry rounds (handles 503 spikes)
         for api_key in keys:

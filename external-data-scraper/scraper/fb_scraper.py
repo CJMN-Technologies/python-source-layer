@@ -51,8 +51,10 @@ def _get_gemini_keys():
 
 OCR_CACHE: dict[str, str] = {}
 
+from gemini_model_resolver import get_gemini_models
+
 def extract_text_from_image(img_url: str) -> str:
-    """Download image and extract text via Gemini 2.0 Flash OCR."""
+    """Download image and extract text via dynamic Gemini OCR."""
     if not img_url:
         return ""
     if img_url in OCR_CACHE:
@@ -71,21 +73,37 @@ def extract_text_from_image(img_url: str) -> str:
         for key in keys:
             try:
                 client = genai.Client(api_key=key)
-                res = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=[image, "Extract all text from this image exactly as written. If no text is present, return nothing."]
-                )
-                extracted = res.text.strip() if res and res.text else ""
-                cleaned = clean_ocr_text(extracted)
-                OCR_CACHE[img_url] = cleaned
-                return cleaned
+                models_to_try = get_gemini_models(client=client, task="vision")
+
+                for model_name in models_to_try:
+                    try:
+                        res = client.models.generate_content(
+                            model=model_name,
+                            contents=[image, "Extract all text from this image exactly as written. If no text is present, return nothing."]
+                        )
+                        extracted = res.text.strip() if res and res.text else ""
+                        cleaned = clean_ocr_text(extracted)
+                        OCR_CACHE[img_url] = cleaned
+                        if cleaned:
+                            print(f"  [OCR] Successfully extracted text using {model_name} ({len(cleaned)} chars)")
+                        return cleaned
+                    except Exception as me:
+                        err_str = str(me).lower()
+                        if "404" in err_str or "not_found" in err_str:
+                            # Model deprecated or sunset, try next candidate model
+                            continue
+                        if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str:
+                            # Key rate limited, break model loop to try next API key
+                            break
+                        # Other transient error, try next candidate model
+                        continue
             except Exception as ke:
                 err_str = str(ke).lower()
                 if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str or "rate" in err_str:
                     continue
-                break
-    except Exception:
-        pass
+                continue
+    except Exception as e:
+        print(f"  [OCR] Error processing image {img_url[:60]}...: {e}")
 
     return ""
 
@@ -557,6 +575,14 @@ def scrape_pages_batch(
             # Extract image text via OCR
             image_text = ""
             media_list = item.get("media") or []
+            if not media_list and item.get("images"):
+                raw_imgs = item.get("images")
+                if isinstance(raw_imgs, list):
+                    media_list = [{"url": u} if isinstance(u, str) else u for u in raw_imgs]
+            if not media_list and item.get("imageUrl"):
+                media_list = [{"url": item.get("imageUrl")}]
+            if not media_list and isinstance(item.get("attachedPost"), dict):
+                media_list = item.get("attachedPost", {}).get("media") or []
             for m in media_list:
                 if page_ocr_count >= max_ocr_per_page:
                     break
