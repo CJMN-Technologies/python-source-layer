@@ -57,6 +57,12 @@ def extract_text_from_image(img_url: str) -> str:
     """Download image and extract text via dynamic Gemini OCR."""
     if not img_url:
         return ""
+
+    lower_url = img_url.lower()
+    # Reject Facebook HTML webpage URLs (e.g. facebook.com/posts/...) that are not image files
+    if "facebook.com/" in lower_url and not any(ext in lower_url for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+        return ""
+
     if img_url in OCR_CACHE:
         return OCR_CACHE[img_url]
 
@@ -65,8 +71,11 @@ def extract_text_from_image(img_url: str) -> str:
         return ""
 
     try:
-        resp = requests.get(img_url, timeout=10)
+        resp = requests.get(img_url, timeout=5)
         if resp.status_code != 200:
+            return ""
+        content_type = resp.headers.get("Content-Type", "").lower()
+        if "image" not in content_type and not any(ext in lower_url for ext in [".jpg", ".jpeg", ".png", ".webp"]):
             return ""
         image = Image.open(io.BytesIO(resp.content))
 
@@ -572,8 +581,14 @@ def scrape_pages_batch(
             )
             caption_text = clean_caption_text(caption_text)
 
-            # Extract image text via OCR
+            # Extract image text via OCR (only if caption is empty, short, or not already an event)
             image_text = ""
+            needs_ocr = (
+                not caption_text
+                or len(caption_text) < 120
+                or not is_relevant_event(caption_text)
+            )
+
             media_list = item.get("media") or []
             if not media_list and item.get("images"):
                 raw_imgs = item.get("images")
@@ -583,31 +598,41 @@ def scrape_pages_batch(
                 media_list = [{"url": item.get("imageUrl")}]
             if not media_list and isinstance(item.get("attachedPost"), dict):
                 media_list = item.get("attachedPost", {}).get("media") or []
-            for m in media_list:
-                if page_ocr_count >= max_ocr_per_page:
-                    break
-                img_uri = None
-                if isinstance(m, dict):
-                    photo_img = m.get("photo_image")
-                    if isinstance(photo_img, dict) and photo_img.get("uri"):
-                        img_uri = photo_img.get("uri")
-                    elif m.get("thumbnail"):
-                        img_uri = m.get("thumbnail")
-                    elif m.get("url") and "facebook.com/photo" not in m.get("url"):
-                        img_uri = m.get("url")
-                    fb_ocr = m.get("ocrText") or ""
-                else:
-                    fb_ocr = ""
 
-                if img_uri:
-                    ocr_res = extract_text_from_image(img_uri)
-                    if ocr_res:
-                        image_text += " " + ocr_res
-                        page_ocr_count += 1
-                    elif fb_ocr:
-                        cleaned_fb_ocr = clean_ocr_text(fb_ocr)
-                        if cleaned_fb_ocr:
-                            image_text += " " + cleaned_fb_ocr
+            post_ocr_done = 0
+            if needs_ocr and media_list:
+                for m in media_list:
+                    if page_ocr_count >= max_ocr_per_page or post_ocr_done >= 1:
+                        break
+                    img_uri = None
+                    fb_ocr = ""
+                    if isinstance(m, dict):
+                        photo_img = m.get("photo_image")
+                        if isinstance(photo_img, dict) and photo_img.get("uri"):
+                            img_uri = photo_img.get("uri")
+                        elif m.get("thumbnail"):
+                            img_uri = m.get("thumbnail")
+                        elif m.get("url"):
+                            u = m.get("url")
+                            u_lower = u.lower()
+                            # Only accept direct CDN images or image files, never Facebook HTML web pages
+                            if ("fbcdn.net" in u_lower or "scontent" in u_lower or any(u_lower.endswith(ext) or ext + "?" in u_lower for ext in [".jpg", ".jpeg", ".png", ".webp"])):
+                                img_uri = u
+                        fb_ocr = m.get("ocrText") or ""
+
+                    if img_uri:
+                        ocr_res = extract_text_from_image(img_uri)
+                        if ocr_res:
+                            image_text += " " + ocr_res
+                            page_ocr_count += 1
+                            post_ocr_done += 1
+                            break
+                        elif fb_ocr:
+                            cleaned_fb_ocr = clean_ocr_text(fb_ocr)
+                            if cleaned_fb_ocr:
+                                image_text += " " + cleaned_fb_ocr
+                                post_ocr_done += 1
+                                break
 
             if caption_text or image_text:
                 mask_ci_text(caption_text)
