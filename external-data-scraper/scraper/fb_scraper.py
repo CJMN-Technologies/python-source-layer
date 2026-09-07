@@ -21,8 +21,13 @@ def mask_ci_text(val: str):
             if len(clean) >= 6:
                 print(f"::add-mask::{clean}", flush=True)
 
+from google.genai import types
+
 # Lazy-initialized list of Gemini API keys
 _gemini_keys = None
+_gemini_key_cooldown: dict[str, float] = {}
+_GEMINI_OCR_CALLS_COUNT = 0
+MAX_GEMINI_OCR_CALLS_PER_RUN = 10
 
 def _get_gemini_keys():
     global _gemini_keys
@@ -49,24 +54,43 @@ def _get_gemini_keys():
         _gemini_keys = keys
     return _gemini_keys
 
+def _get_active_gemini_keys() -> list[str]:
+    keys = _get_gemini_keys()
+    if not keys:
+        return []
+    now = time.time()
+    ready = [k for k in keys if now >= _gemini_key_cooldown.get(k, 0)]
+    if ready:
+        return ready
+    # If all keys are on cooldown, return them sorted by earliest cooldown expiry
+    return sorted(keys, key=lambda k: _gemini_key_cooldown.get(k, 0))
+
+def _mark_key_cooldown(key: str, duration_sec: float = 60.0):
+    _gemini_key_cooldown[key] = time.time() + duration_sec
+
 OCR_CACHE: dict[str, str] = {}
 
 from gemini_model_resolver import get_gemini_models
 
 def extract_text_from_image(img_url: str) -> str:
-    """Download image and extract text via dynamic Gemini OCR."""
+    """Download image and extract text via dynamic Gemini OCR with strict timeouts and key cooldowns."""
+    global _GEMINI_OCR_CALLS_COUNT
     if not img_url:
         return ""
 
     lower_url = img_url.lower()
-    # Reject Facebook HTML webpage URLs (e.g. facebook.com/posts/...) that are not image files
+    # Reject Facebook HTML webpage URLs (e.g. facebook.com/posts/...) that are not direct image files
     if "facebook.com/" in lower_url and not any(ext in lower_url for ext in [".jpg", ".jpeg", ".png", ".webp"]):
         return ""
 
     if img_url in OCR_CACHE:
         return OCR_CACHE[img_url]
 
-    keys = _get_gemini_keys()
+    if _GEMINI_OCR_CALLS_COUNT >= MAX_GEMINI_OCR_CALLS_PER_RUN:
+        print(f"  [OCR] Global Gemini OCR budget ({MAX_GEMINI_OCR_CALLS_PER_RUN} calls) reached for this run. Skipping further calls.")
+        return ""
+
+    keys = _get_active_gemini_keys()
     if not keys:
         return ""
 
@@ -81,11 +105,19 @@ def extract_text_from_image(img_url: str) -> str:
 
         for key in keys:
             try:
-                client = genai.Client(api_key=key)
+                client = genai.Client(
+                    api_key=key,
+                    http_options=types.HttpOptions(
+                        timeout=10000,
+                        retry_options=types.HttpRetryOptions(attempts=1)
+                    )
+                )
                 models_to_try = get_gemini_models(client=client, task="vision")
 
-                for model_name in models_to_try:
+                # Test at most the top 2 models (e.g. forward-compatible alias + top versioned model)
+                for model_name in models_to_try[:2]:
                     try:
+                        _GEMINI_OCR_CALLS_COUNT += 1
                         res = client.models.generate_content(
                             model=model_name,
                             contents=[image, "Extract all text from this image exactly as written. If no text is present, return nothing."]
@@ -99,16 +131,19 @@ def extract_text_from_image(img_url: str) -> str:
                     except Exception as me:
                         err_str = str(me).lower()
                         if "404" in err_str or "not_found" in err_str:
-                            # Model deprecated or sunset, try next candidate model
+                            # Model not found on this endpoint, try secondary model
                             continue
-                        if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str:
-                            # Key rate limited, break model loop to try next API key
+                        if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str or "rate" in err_str:
+                            # Key rate limited, mark cooldown and switch immediately to next API key
+                            _mark_key_cooldown(key)
                             break
-                        # Other transient error, try next candidate model
-                        continue
+                        # For unparseable images, safety filter triggers, or other image-specific errors,
+                        # trying another model on the exact same image is pointless
+                        break
             except Exception as ke:
                 err_str = str(ke).lower()
                 if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str or "rate" in err_str:
+                    _mark_key_cooldown(key)
                     continue
                 continue
     except Exception as e:
@@ -460,7 +495,7 @@ def scrape_pages_batch(
     existing_urls: set = None,
     existing_texts: set = None,
     max_age_days: float = 2.0,
-    max_ocr_per_page: int = 25,
+    max_ocr_per_page: int = 2,
     results_limit_per_page: int = 4,
 ) -> dict[str, list[dict]]:
     """
@@ -581,12 +616,12 @@ def scrape_pages_batch(
             )
             caption_text = clean_caption_text(caption_text)
 
-            # Extract image text via OCR (only if caption is empty, short, or not already an event)
-            image_text = ""
-            needs_ocr = (
-                not caption_text
-                or len(caption_text) < 120
-                or not is_relevant_event(caption_text)
+            # Announcement cue keywords for posts with longer captions that might have infographics
+            ANNOUNCEMENT_CUES = (
+                "advisory", "announcement", "walang pasok", "suspension", "suspendido",
+                "shift", "classes", "notice", "circular", "memorandum", "guidelines",
+                "pasok", "schedule", "modalities", "weather", "typhoon", "bagyo",
+                "strike", "holiday", "virtual mode", "enriched virtual"
             )
 
             media_list = item.get("media") or []
@@ -599,13 +634,13 @@ def scrape_pages_batch(
             if not media_list and isinstance(item.get("attachedPost"), dict):
                 media_list = item.get("attachedPost", {}).get("media") or []
 
-            post_ocr_done = 0
-            if needs_ocr and media_list:
+            image_text = ""
+            img_uri = None
+            fb_ocr_cleaned = ""
+
+            # Check Facebook's built-in OCR from Apify first (instant, free, 0ms latency)
+            if media_list:
                 for m in media_list:
-                    if page_ocr_count >= max_ocr_per_page or post_ocr_done >= 1:
-                        break
-                    img_uri = None
-                    fb_ocr = ""
                     if isinstance(m, dict):
                         photo_img = m.get("photo_image")
                         if isinstance(photo_img, dict) and photo_img.get("uri"):
@@ -615,24 +650,45 @@ def scrape_pages_batch(
                         elif m.get("url"):
                             u = m.get("url")
                             u_lower = u.lower()
-                            # Only accept direct CDN images or image files, never Facebook HTML web pages
                             if ("fbcdn.net" in u_lower or "scontent" in u_lower or any(u_lower.endswith(ext) or ext + "?" in u_lower for ext in [".jpg", ".jpeg", ".png", ".webp"])):
                                 img_uri = u
-                        fb_ocr = m.get("ocrText") or ""
 
-                    if img_uri:
-                        ocr_res = extract_text_from_image(img_uri)
-                        if ocr_res:
-                            image_text += " " + ocr_res
-                            page_ocr_count += 1
-                            post_ocr_done += 1
-                            break
-                        elif fb_ocr:
-                            cleaned_fb_ocr = clean_ocr_text(fb_ocr)
-                            if cleaned_fb_ocr:
-                                image_text += " " + cleaned_fb_ocr
-                                post_ocr_done += 1
-                                break
+                        raw_fb_ocr = m.get("ocrText") or ""
+                        if raw_fb_ocr:
+                            c_fb = clean_ocr_text(raw_fb_ocr)
+                            if c_fb and not fb_ocr_cleaned:
+                                fb_ocr_cleaned = c_fb
+                    if img_uri or fb_ocr_cleaned:
+                        break
+
+            # Fast path: If Facebook's built-in OCR already caught sufficient text (>= 30 chars)
+            # or detected event keywords, use it directly without calling Gemini!
+            if fb_ocr_cleaned and (len(fb_ocr_cleaned) >= 30 or is_relevant_event(caption_text, fb_ocr_cleaned)):
+                image_text = fb_ocr_cleaned
+            else:
+                # Fallback path: Only call Gemini OCR if Facebook OCR was empty/insufficient
+                # AND the post is a potential announcement/infographic
+                caption_lower = caption_text.lower() if caption_text else ""
+                needs_gemini_ocr = (
+                    bool(img_uri)
+                    and page_ocr_count < max_ocr_per_page
+                    and (
+                        not caption_text
+                        or len(caption_text) < 120
+                        or any(cue in caption_lower for cue in ANNOUNCEMENT_CUES)
+                    )
+                )
+
+                if needs_gemini_ocr:
+                    ocr_res = extract_text_from_image(img_uri)
+                    if ocr_res:
+                        image_text = ocr_res
+                        page_ocr_count += 1
+                    elif fb_ocr_cleaned:
+                        # Fallback to whatever partial text Facebook OCR captured
+                        image_text = fb_ocr_cleaned
+                elif fb_ocr_cleaned:
+                    image_text = fb_ocr_cleaned
 
             if caption_text or image_text:
                 mask_ci_text(caption_text)
@@ -668,7 +724,7 @@ def scrape_page(
     existing_urls: set = None,
     max_scrolls: int = 6,
     max_age_days: float = 14.0,
-    max_ocr_per_page: int = 25,
+    max_ocr_per_page: int = 2,
     results_limit: int = 10,
 ) -> list[dict]:
     """Single page scraper fallback using scrape_pages_batch."""

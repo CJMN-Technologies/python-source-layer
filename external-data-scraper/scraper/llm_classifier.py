@@ -2,6 +2,7 @@ import json
 import time
 import os
 from google import genai
+from google.genai import types
 from pydantic import BaseModel
 from typing import Optional
 
@@ -173,7 +174,13 @@ CATEGORY null (reject — not relevant):
         for api_key in keys:
             for model_name in models_to_try:
                 try:
-                    client = genai.Client(api_key=api_key)
+                    client = genai.Client(
+                        api_key=api_key,
+                        http_options=types.HttpOptions(
+                            timeout=15000,
+                            retry_options=types.HttpRetryOptions(attempts=1)
+                        )
+                    )
                     response = client.models.generate_content(
                         model=model_name,
                         contents=prompt,

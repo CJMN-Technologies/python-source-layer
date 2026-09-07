@@ -64,7 +64,14 @@ def get_gemini_models(client: Optional[genai.Client] = None, api_key: Optional[s
     active_client = client
     if not active_client and api_key:
         try:
-            active_client = genai.Client(api_key=api_key)
+            from google.genai import types
+            active_client = genai.Client(
+                api_key=api_key,
+                http_options=types.HttpOptions(
+                    timeout=5000,
+                    retry_options=types.HttpRetryOptions(attempts=1)
+                )
+            )
         except Exception:
             active_client = None
 
@@ -112,6 +119,8 @@ def get_gemini_models(client: Optional[genai.Client] = None, api_key: Optional[s
             "gemini-flash-lite-latest",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
             "gemini-3.5-flash",
             "gemini-3.5-flash-lite",
         ]
