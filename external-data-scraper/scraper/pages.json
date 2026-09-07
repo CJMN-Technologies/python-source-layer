@@ -4,7 +4,7 @@
   {"batch": "Eastbound", "station": "Recto",        "name": "University of the East Student Council",  "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/UEUSC/"},
   {"batch": "Eastbound", "station": "Recto",        "name": "Far Eastern University Manila",            "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/FarEasternUniversity"},
   {"batch": "Eastbound", "station": "Recto",        "name": "FEU Central Student Organization",        "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/feucentralstudentorganization/"},
-  {"batch": "Eastbound", "station": "Legarda",      "name": "University of Santo Tomas",               "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/UST1611official"},
+  {"batch": "Eastbound", "station": "Legarda",      "name": "The Varsitarian",                         "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/varsitarian"},
   {"batch": "Eastbound", "station": "Legarda",      "name": "UST Central Student Council",             "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/USTCSC"},
   {"batch": "Eastbound", "station": "Legarda",      "name": "San Beda University",                     "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/SBUManilaOfficial"},
   {"batch": "Eastbound", "station": "Legarda",      "name": "San Beda Student Council",                "source_type": "academic", "tier": "quiet", "url": "https://www.facebook.com/sanbedasc"},
