@@ -24,10 +24,20 @@ on:
         description: 'Batch to run (Eastbound, Westbound, or all)'
         required: false
         default: 'all'
+        type: choice
+        options:
+          - all
+          - Eastbound
+          - Westbound
       mode:
-        description: 'Scrape mode (strong, medium, or light)'
+        description: 'Scrape mode (strong: 4AM sweep, medium: 11AM surge, light: 4PM watchdog)'
         required: false
-        default: 'medium'
+        default: 'strong'
+        type: choice
+        options:
+          - strong
+          - medium
+          - light
 
 jobs:
   scrape-events:
