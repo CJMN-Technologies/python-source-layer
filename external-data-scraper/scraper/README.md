@@ -97,16 +97,20 @@ Facebook Post
 └──────────┬───────────────┘
            │
            ▼
-     Save to Supabase (`external.academic_lgu_events`)
-           │
-           ▼
+      Save to Supabase (`external.academic_lgu_events`)
+            │
+            ▼
 ┌──────────────────────────┐
 │ 5. Database Trigger      │  external.sync_academic_lgu_to_events_consolidated()
 │    Classification Sync   │  Broadened regex (tense-agnostic, #WalangPasok hashtag resilience)
+│    & Entity Origin Sync  │  Strict source_type propagation ('lgu' vs 'academic')
 └──────────┬───────────────┘
-           │
-           ▼
-     Live Event Feed (`Analytics.descriptive_live_event_feed`)
+            │
+            ▼
+     Consolidated Events (`external.events_consolidated`)
+            │
+            ▼
+     Live Event Feed (`"Analytics".descriptive_live_event_feed`)
 ```
 
 ## Environment Variables
