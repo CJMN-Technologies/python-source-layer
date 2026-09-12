@@ -260,10 +260,13 @@ For each relevant post, the pipeline generates a sequential ID and saves:
 
 ## Deduplication
 
-The pipeline uses two deduplication strategies:
+The pipeline uses a **3-Layer bulletproof deduplication strategy**:
 
-1. **URL deduplication** — skips posts whose `source_url` already exists in the database.
-2. **Text similarity** — compares the first 100 characters of `post_text + image_text` against existing records. This catches the same content posted under different URL formats (e.g., `/posts/` vs `/photo/` vs `/permalink/`).
+1. **URL deduplication** — Skips posts whose `source_url` (cleaned of query tracking parameters) already exists in `external.academic_lgu_events`.
+2. **Normalized Text Prefix Similarity** — Strips common advisory prefixes (`"Advisory |"`, `"Edited Advisory |"`, `"Just In |"`, `"#WalangPasok"`, `"Panoorin |"`) and compares the first 100 characters of `post_text + image_text` against existing records. This catches identical notices reposted under different URL schemes (e.g. `/posts/` vs `/photo/`) or corrected replacement advisories (*"Edited Advisory: This advisory has been edited to correct an error..."*).
+3. **Semantic Event Key & Code Key Collision** — 
+   - Tracks `(source_name, event_name, event_date)` tuples to prevent reminder posts from duplicating.
+   - For major transit disruptions (`MAJOR_ARENA_EVENT`, `CLASS_SUSPENSION`, `ONLINE_CLASS_SHIFT`), tracks `(source_name, event_date, event_code)` collisions. This prevents multiple game recaps or sequential photo updates (e.g. UAAP exhibition matches from student publications) from inflating event counts and spiking the Academic Surge Weight ($A_{sw}$).
 
 ## Source URL Safety
 
@@ -315,7 +318,8 @@ Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_t
   1. **Startup Jitter**: Westbound runners wait 20–35 seconds before launching so concurrent matrix jobs never hit Facebook at the exact same millisecond.
   2. **Inter-Page Pacing**: The pipeline enforces a randomized 12–22 second cooldown between consecutive page scrapes.
   3. **User-Agent Pool**: Playwright randomly rotates among modern Windows and macOS desktop User-Agent strings (`Chrome 131`, `Chrome 130`, `Edge 129`).
-- **Cancellation & Rescheduling Synchronization (`tg_sync_academic_lgu_events`)** — When an advisory is flagged with `is_cancellation = true`, the database consolidation layer deactivates the original active record on the announcement date in `academic_lgu_events` (`is_cancelled = true`) and removes it from `events_consolidated`. If the announcement is rescheduling a major sports/arena event (e.g. UAAP kickoff rallies, celebrity matches) to a future date, the classifier honors `event_code = MAJOR_ARENA_EVENT` and schedules the rescheduled event on the new target date (`event_date`) as `major_event` (friction weight `0.65`). Secondary clauses (such as *"rescheduled due to class suspensions"*) are evaluated after the reschedule check, preventing sports reschedulings from falsely hijacking the feed as Critical (`1.0`) class suspensions.
+- **Cancellation & Rescheduling Synchronization (`tg_sync_academic_lgu_events`)** — When an advisory is flagged with `is_cancellation = true`, the database consolidation layer deactivates the original active record on the announcement date in `academic_lgu_events` (`is_cancelled = true`) and removes it from `events_consolidated`. If the announcement is rescheduling a major sports/arena event (e.g. UAAP kickoff rallies, celebrity matches) to a future date, the classifier honors `event_code = MAJOR_ARENA_EVENT` and schedules the rescheduled event on the new target date (`event_date`) as `major_event` (friction weight `0.65`). Secondary clauses (such as *"rescheduled due to class suspensions"*) are evaluated after the reschedule check, preventing sports reschedulings from falsely hijacking the feed as Critical (`1.0`) class suspensions. For official resumptions of classes/work (`event_code = 'RESUMPTION_CLASSES'`), the trigger strictly exits without inserting active suspension records, preventing advance notices (where `event_date > post_date`) from being inverted into active class suspensions.
+- **Annual Holiday Proclamation Guardrail** — Nationwide holiday lists published months in advance for an upcoming calendar year (e.g. Malacañang 2027 Holiday Schedule) are classified as non-disruptive reference notices (`CIVIC_MAINTENANCE` / non-disruptive), preventing them from being scheduled as pseudo class suspensions on January 1.
 - **GitHub Actions Free Quota Optimization** — Redundant half-hourly watchdog polling is disabled; primary weather pipelines run with built-in 5x retries, keeping overall monorepo consumption at ~750 minutes/month (well within the 2,000 min/mo private repository quota).
 
 ## Email Alerts

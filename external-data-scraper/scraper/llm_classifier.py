@@ -121,6 +121,12 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - Community donation drives, soup kitchens, and relief goods distribution (#IskoOps, volunteer food pack distributions) conducted after severe weather are community aid activities, NOT transit disruption events.
    - Output category = null (reject — not an active transport disruption).
 
+13. ANNUAL NATIONWIDE HOLIDAY LISTS & PROCLAMATIONS (STRICT NEGATIVE RULE):
+   - Announcements sharing the full annual schedule of nationwide regular and special holidays for an entire future calendar year (e.g. "Malacañang releases list of 2027 holidays" or "Official 2027 Philippine Holidays"):
+   - Do NOT classify as CLASS_SUSPENSION, and do NOT set event_date to January 1st!
+   - These are non-disruptive informational reference schedules / proclamations published months in advance.
+   - For nationwide full-year holiday lists or calendar releases, output category = null (or event_code = "CIVIC_MAINTENANCE" with is_cancellation = false).
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 

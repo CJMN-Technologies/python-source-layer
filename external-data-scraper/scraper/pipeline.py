@@ -231,8 +231,10 @@ def _determine_category(llm_res: dict, page: dict) -> str | None:
     if llm_category is None and not llm_res.get("llm_failed"):
         return None
 
-    # Always preserve academic_calendar — do not override it
+    # Always preserve academic_calendar for academic pages (LGUs publish holiday lists/bulletins, not academic calendars)
     if llm_category == "academic_calendar":
+        if page.get("source_type") == "lgu":
+            return "lgu"
         return "academic_calendar"
 
     source_type = page.get("source_type")
@@ -286,11 +288,12 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
     existing_urls = set()
     existing_texts = set()
     existing_event_keys = set()
+    existing_code_keys = set()
     try:
         res = (
             supabase.schema("external")
             .table("academic_lgu_events")
-            .select("source_url, post_text, image_text, source_name, event_name, event_date")
+            .select("source_url, post_text, image_text, source_name, event_name, event_date, event_code")
             .execute()
         )
         rows = res.data if hasattr(res, "data") else res
@@ -304,15 +307,25 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
 
                 combined_db = re.sub(r"\s+", " ", f"{row.get('post_text') or ''} {row.get('image_text') or ''}").strip().casefold()
                 if combined_db:
+                    clean_db_prefix = re.sub(
+                        r"^(?:(?:edited\s+)?advisory\s*[:|—\-]|just\s+in\s*[:|!—\-]|update\s*[:|—\-]|panoorin\s*[:|—\-]|\#walangpasok\s*[:|—\-]|advisory\b)\s*",
+                        "",
+                        combined_db,
+                        flags=re.IGNORECASE,
+                    ).strip()
+                    existing_texts.add(clean_db_prefix[:100])
                     existing_texts.add(combined_db[:100])
 
                 src = (row.get("source_name") or "").strip().lower()
                 ev = (row.get("event_name") or "").strip().lower()
                 dt = (row.get("event_date") or "").strip().lower()
+                cd = (row.get("event_code") or "").strip().upper()
                 if src and ev and ev != "n/a":
                     existing_event_keys.add((src, ev, dt))
+                if src and dt and cd in ("MAJOR_ARENA_EVENT", "CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT"):
+                    existing_code_keys.add((src, dt, cd))
 
-        print(f"Loaded {len(existing_urls)} URLs and {len(existing_event_keys)} unique events from database.")
+        print(f"Loaded {len(existing_urls)} URLs, {len(existing_event_keys)} unique events, and {len(existing_code_keys)} code keys from database.")
     except Exception as e:
         print(f"Warning: Could not fetch existing data from database: {e}")
 
@@ -366,11 +379,17 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
 
             combined = f"{post.get('text', '')} {post.get('image_text', '')}".strip()
             normalized_combined = re.sub(r"\s+", " ", combined).strip().casefold()
-            post_prefix = normalized_combined[:100]
+            clean_combined = re.sub(
+                r"^(?:(?:edited\s+)?advisory\s*[:|—\-]|just\s+in\s*[:|!—\-]|update\s*[:|—\-]|panoorin\s*[:|—\-]|\#walangpasok\s*[:|—\-]|advisory\b)\s*",
+                "",
+                normalized_combined,
+                flags=re.IGNORECASE,
+            ).strip()
+            post_prefix = clean_combined[:100] if clean_combined else normalized_combined[:100]
             mask_ci_text(post_prefix)
 
-            # Layer 2: Deduplicate by text similarity
-            if post_prefix and post_prefix in existing_texts:
+            # Layer 2: Deduplicate by text similarity (raw or normalized prefix)
+            if (post_prefix and post_prefix in existing_texts) or (normalized_combined[:100] in existing_texts):
                 print("  Skipped duplicate text (already in DB under different URL).")
                 continue
 
@@ -404,14 +423,20 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                 event_name = llm_res.get("event_name")
                 event_date = llm_res.get("event_date")
 
-            # Layer 3: Semantic Event Deduplication (Prevents reminder posts from duplicating)
+            # Layer 3: Semantic Event Deduplication (Prevents reminder posts & duplicate sub-events from duplicating)
             src_key = page["name"].strip().lower()
             ev_key = (event_name or "").strip().lower()
             dt_key = (event_date or "").strip().lower()
+            event_code_val = (llm_res.get("event_code") or "").strip().upper()
             event_tuple = (src_key, ev_key, dt_key)
+            code_tuple = (src_key, dt_key, event_code_val)
 
             if ev_key and ev_key != "n/a" and event_tuple in existing_event_keys:
                 print(f"  Skipped duplicate event: [{page['name']}] '{event_name}' on '{event_date}' (Already in Supabase).")
+                continue
+
+            if dt_key and event_code_val in ("MAJOR_ARENA_EVENT", "CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT") and code_tuple in existing_code_keys:
+                print(f"  Skipped duplicate {event_code_val} from [{page['name']}] on '{event_date}' (Already recorded in batch).")
                 continue
 
             now = datetime.now(timezone.utc)
@@ -461,8 +486,11 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                 existing_urls.add(source_url.strip().lower())
                 if post_prefix:
                     existing_texts.add(post_prefix)
+                existing_texts.add(normalized_combined[:100])
                 if ev_key and ev_key != "n/a":
                     existing_event_keys.add(event_tuple)
+                if dt_key and event_code_val in ("MAJOR_ARENA_EVENT", "CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT"):
+                    existing_code_keys.add(code_tuple)
 
                 total_saved += 1
                 newly_saved_events.append({
