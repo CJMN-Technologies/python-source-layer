@@ -10,6 +10,73 @@ from keywords import classify_post
 from llm_classifier import classify_post_llm
 from email_notifier import send_pipeline_alert
 
+# ---------------------------------------------------------------------------
+# Retrospective Photo Recap Guardrail
+#
+# When a Facebook page posts a photo album / celebratory recap AFTER an event
+# already took place, the LLM may extract the past event date, causing the
+# pipeline to create retroactive disruption records in events_consolidated.
+# These phrases indicate the post is describing a completed past event, not
+# issuing a forward-looking disruption notice.
+# ---------------------------------------------------------------------------
+_RETROSPECTIVE_PHRASES = re.compile(
+    r"("
+    r"naging\s+matagumpay"
+    r"|came\s+together"
+    r"|held\s+(last|on)\s+(september|august|july|june|january|february|march|april|may|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    r"|photo\s+(highlight|album|recap|documentation)"
+    r"|event\s+recap"
+    r"|look\s+back"
+    r"|successfully\s+held"
+    r"|isang\s+matagumpay"
+    r"|naganap\s+noong"
+    r"|nagdaos\s+ng"
+    r"|naganap\s+kahapon"
+    r"|naging\s+makulay"
+    r"|nagtapos\s+na\s+ang"
+    r"|natapos\s+na"
+    r"|on\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2},?\s+the"
+    r")",
+    flags=re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Institutional Cluster Deduplication
+#
+# Maps Facebook page display names to a canonical institution cluster key so
+# that announcements from a university administration page and its student
+# council are treated as the same source for CLASS_SUSPENSION,
+# ONLINE_CLASS_SHIFT, and TRANSPORT_STRIKE deduplication. Only the first
+# announcement from a cluster+date+code combination is ingested.
+# ---------------------------------------------------------------------------
+_INSTITUTION_CLUSTER_MAP: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"far\s+eastern\s+university|\bfeu\b", re.I), "feu"),
+    (re.compile(r"university\s+of\s+santo\s+tomas|\bust\b|varsitarian|thomasian", re.I), "ust"),
+    (re.compile(r"university\s+of\s+the\s+east(?!\s+student)|\bue\s+manila|\bue\s+caloocan", re.I), "ue"),
+    (re.compile(r"university\s+of\s+the\s+east\s+student|ue\s+(student|usc)", re.I), "ue"),
+    (re.compile(r"university\s+of\s+the\s+philippines\s+diliman|\bup\s+diliman|\bupd\b", re.I), "up"),
+    (re.compile(r"up\s+diliman\s+university\s+student|\busc\s+up\b", re.I), "up"),
+    (re.compile(r"san\s+beda\s+university|san\s+beda\s+student", re.I), "sbu"),
+    (re.compile(r"ateneo\s+de\s+manila|ateneo\s+sanggunian", re.I), "ateneo"),
+    (re.compile(r"technological\s+institute\s+of\s+the\s+philippines|\btip\s+(cubao|manila|qc|quezon)", re.I), "tip"),
+    (re.compile(r"stella\s+maris\s+college", re.I), "stella_maris"),
+    (re.compile(r"st\.?\s*paul\s+university\s+quezon\s+city|spuqc", re.I), "spuqc"),
+    (re.compile(r"world\s+citi\s+colleges|\bwcc\b", re.I), "wcc"),
+    (re.compile(r"uerm|university\s+of\s+the\s+east\s+ramon\s+magsaysay", re.I), "uerm"),
+    (re.compile(r"pup\s+|polytechnic\s+university\s+of\s+the\s+philippines", re.I), "pup"),
+    (re.compile(r"our\s+lady\s+of\s+fatima|\bolfu\b", re.I), "olfu"),
+]
+# Transit disruption codes eligible for institutional cluster deduplication
+_CLUSTER_DEDUP_CODES = frozenset({"CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT", "TRANSPORT_STRIKE"})
+
+
+def _get_institution_cluster(page_name: str) -> str | None:
+    """Return a canonical institution cluster key for a page name, or None."""
+    for pattern, cluster in _INSTITUTION_CLUSTER_MAP:
+        if pattern.search(page_name):
+            return cluster
+    return None
+
 # Fix Windows console encoding crash on special characters (e.g. arrows, checkmarks)
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -324,6 +391,11 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                     existing_event_keys.add((src, ev, dt))
                 if src and dt and cd in ("MAJOR_ARENA_EVENT", "CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT"):
                     existing_code_keys.add((src, dt, cd))
+                # Cluster-aware deduplication: seed cluster key so student council
+                # announcements skip when the parent admin page already filed the same code+date
+                cluster = _get_institution_cluster(row.get("source_name") or "")
+                if cluster and dt and cd in _CLUSTER_DEDUP_CODES:
+                    existing_code_keys.add((f"__cluster__{cluster}", dt, cd))
 
         print(f"Loaded {len(existing_urls)} URLs, {len(existing_event_keys)} unique events, and {len(existing_code_keys)} code keys from database.")
     except Exception as e:
@@ -439,6 +511,17 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                 print(f"  Skipped duplicate {event_code_val} from [{page['name']}] on '{event_date}' (Already recorded in batch).")
                 continue
 
+            # Cluster-aware institutional deduplication
+            # If the same event_code + date has already been filed by another page
+            # from the same institution cluster (e.g. university admin page before
+            # the student council), skip this page to avoid double-counting.
+            cluster_key = _get_institution_cluster(page["name"])
+            if cluster_key and dt_key and event_code_val in _CLUSTER_DEDUP_CODES:
+                cluster_code_tuple = (f"__cluster__{cluster_key}", dt_key, event_code_val)
+                if cluster_code_tuple in existing_code_keys:
+                    print(f"  Skipped cluster duplicate {event_code_val} from [{page['name']}] (cluster: {cluster_key}) on '{event_date}' — another page from the same institution already filed this code.")
+                    continue
+
             now = datetime.now(timezone.utc)
 
             # Check if extracted event_date is definitively in the past (> 14 days ago)
@@ -450,6 +533,20 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                         if (now - extracted_dt).days > 14:
                             print(f"  Skipped past historical/commemorative post ({date_match.group(0)} is > 14 days ago).")
                             continue
+
+                        # Retrospective Photo Recap Guardrail (MAJOR_ARENA_EVENT only)
+                        # If the event_date is more than 1 day before the post_date AND the
+                        # post contains retrospective phrasing, this is a photo album / recap
+                        # posted after the event concluded — not a forward disruption notice.
+                        if event_code_val == "MAJOR_ARENA_EVENT" and post_age_days is not None:
+                            computed_post_date = now - timedelta(days=post_age_days)
+                            days_in_past = (computed_post_date.date() - extracted_dt.date()).days
+                            is_retrospective = days_in_past > 1 or (
+                                days_in_past > 0 and bool(_RETROSPECTIVE_PHRASES.search(combined))
+                            )
+                            if is_retrospective:
+                                print(f"  Skipped retrospective recap post: event_date={date_match.group(0)} was {days_in_past}d before post_date. Not a forward disruption notice.")
+                                continue
                     except Exception:
                         pass
 
@@ -491,6 +588,11 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                     existing_event_keys.add(event_tuple)
                 if dt_key and event_code_val in ("MAJOR_ARENA_EVENT", "CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT"):
                     existing_code_keys.add(code_tuple)
+                # Seed cluster-aware dedup key so subsequent pages in this batch
+                # from the same institution cluster skip the same code+date
+                cluster_key = _get_institution_cluster(page["name"])
+                if cluster_key and dt_key and event_code_val in _CLUSTER_DEDUP_CODES:
+                    existing_code_keys.add((f"__cluster__{cluster_key}", dt_key, event_code_val))
 
                 total_saved += 1
                 newly_saved_events.append({

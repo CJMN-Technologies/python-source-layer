@@ -44,7 +44,7 @@ Post categories:
 
 | File | Purpose |
 | --- | --- |
-| `pipeline.py` | Main events scraper pipeline — scrapes pages, classifies posts, deduplicates, and saves to Supabase. Supports batch selection (A/B/C/D). |
+| `pipeline.py` | Main events scraper pipeline — scrapes pages, classifies posts, deduplicates, and saves to Supabase. Supports batch selection (A/B/C/D). Implements 5-layer deduplication including a retrospective photo recap guardrail and institutional cluster deduplication. |
 | `fb_scraper.py` | Core Playwright scraping engine — page loading, caption expansion, permalink extraction, post age parsing, Gemini OCR text extraction, resource blocking. |
 | `auth.py` | Builds Facebook cookie profiles from environment variables. Supports multiple accounts (primary + up to 9 backups). |
 | `keywords.py` | Pre-filter: classifies post text as `academic`, `lgu`, or irrelevant using keyword groups aligned to the friction weight table. Uses `.casefold()` for case-insensitive matching. Equipped with dedicated recognition for UST's *"Enriched Virtual Mode of Instruction"* (EVM), Thomasian demographic context tokens, institutional source-type inheritance, and negative keyword exclusion guards for post-flood medical/health notices (Leptospirosis, Doxycycline) and relief goods distribution to prevent false weather disruption triggers. |
@@ -260,13 +260,19 @@ For each relevant post, the pipeline generates a sequential ID and saves:
 
 ## Deduplication
 
-The pipeline uses a **3-Layer bulletproof deduplication strategy**:
+The pipeline uses a **5-Layer bulletproof deduplication strategy**:
 
 1. **URL deduplication** — Skips posts whose `source_url` (cleaned of query tracking parameters) already exists in `external.academic_lgu_events`.
 2. **Normalized Text Prefix Similarity** — Strips common advisory prefixes (`"Advisory |"`, `"Edited Advisory |"`, `"Just In |"`, `"#WalangPasok"`, `"Panoorin |"`) and compares the first 100 characters of `post_text + image_text` against existing records. This catches identical notices reposted under different URL schemes (e.g. `/posts/` vs `/photo/`) or corrected replacement advisories (*"Edited Advisory: This advisory has been edited to correct an error..."*).
 3. **Semantic Event Key & Code Key Collision** — 
    - Tracks `(source_name, event_name, event_date)` tuples to prevent reminder posts from duplicating.
    - For major transit disruptions (`MAJOR_ARENA_EVENT`, `CLASS_SUSPENSION`, `ONLINE_CLASS_SHIFT`), tracks `(source_name, event_date, event_code)` collisions. This prevents multiple game recaps or sequential photo updates (e.g. UAAP exhibition matches from student publications) from inflating event counts and spiking the Academic Surge Weight ($A_{sw}$).
+4. **Retrospective Photo Recap Guardrail** (`MAJOR_ARENA_EVENT` only) — Detects posts published **after** an arena or sports event has already concluded and blocks them from generating active disruption records in `events_consolidated`. A post is classified as retrospective if:
+   - The LLM-extracted `event_date` is **more than 1 day before** the Facebook post's publication date, **or**
+   - The `event_date` is in the past **and** the post text matches Filipino/English celebratory recap phrases such as `"naging matagumpay"`, `"photo highlight"`, `"event recap"`, `"successfully held"`, `"naganap noong"`, etc.
+   
+   This guardrail is mirrored in the `external.sync_academic_lgu_to_events_consolidated` database trigger, which applies the same logic as a secondary defense for any records that may have been inserted before the pipeline filter was active.
+5. **Institutional Cluster Deduplication** — When two Facebook pages from the **same institution** (e.g. *Far Eastern University Manila* and *FEU Central Student Organization*) both post the same `CLASS_SUSPENSION`, `ONLINE_CLASS_SHIFT`, or `TRANSPORT_STRIKE` code for the same date, only the **first** announcement encountered is ingested. Subsequent announcements from the same institution cluster are silently skipped. Cluster keys are maintained for all major LRT-2 corridor universities (FEU, UST, UE, UP Diliman, San Beda, Ateneo, TIP, Stella Maris, SPUQC, WCC, UERM, PUP, OLFU). This cluster key is seeded from the database at run start **and** updated within the current batch as new events are saved, so the deduplication applies across both the historical and in-flight data.
 
 ## Source URL Safety
 
@@ -321,6 +327,8 @@ Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_t
 - **Cancellation & Rescheduling Synchronization (`tg_sync_academic_lgu_events`)** — When an advisory is flagged with `is_cancellation = true`, the database consolidation layer deactivates the original active record on the announcement date in `academic_lgu_events` (`is_cancelled = true`) and removes it from `events_consolidated`. If the announcement is rescheduling a major sports/arena event (e.g. UAAP kickoff rallies, celebrity matches) to a future date, the classifier honors `event_code = MAJOR_ARENA_EVENT` and schedules the rescheduled event on the new target date (`event_date`) as `major_event` (friction weight `0.65`). Secondary clauses (such as *"rescheduled due to class suspensions"*) are evaluated after the reschedule check, preventing sports reschedulings from falsely hijacking the feed as Critical (`1.0`) class suspensions. For official resumptions of classes/work (`event_code = 'RESUMPTION_CLASSES'`), the trigger strictly exits without inserting active suspension records, preventing advance notices (where `event_date > post_date`) from being inverted into active class suspensions.
 - **Annual Holiday Proclamation Guardrail** — Nationwide holiday lists published months in advance for an upcoming calendar year (e.g. Malacañang 2027 Holiday Schedule) are classified as non-disruptive reference notices (`CIVIC_MAINTENANCE` / non-disruptive), preventing them from being scheduled as pseudo class suspensions on January 1.
 - **GitHub Actions Free Quota Optimization** — Redundant half-hourly watchdog polling is disabled; primary weather pipelines run with built-in 5x retries, keeping overall monorepo consumption at ~750 minutes/month (well within the 2,000 min/mo private repository quota).
+- **Retrospective Photo Recap Guardrail** — See [Deduplication Layer 4](#deduplication) above. Applied in `pipeline.py` at post-classification time (before database write) and mirrored in the `external.sync_academic_lgu_to_events_consolidated` database trigger as a secondary defense.
+- **Institutional Cluster Deduplication** — See [Deduplication Layer 5](#deduplication) above. Prevents student council or affiliate pages from doubling the disruption weight of an event already reported by the institution's official administration page.
 
 ## Email Alerts
 
