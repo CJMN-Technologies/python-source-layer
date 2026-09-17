@@ -21,7 +21,12 @@ from email_notifier import send_pipeline_alert
 # ---------------------------------------------------------------------------
 _RETROSPECTIVE_PHRASES = re.compile(
     r"("
-    r"naging\s+matagumpay"
+    r"playing\s+it\s+back"
+    r"|katatapos\s+lang"
+    r"|after\s+the\s+(?:spectacular|opening|ceremony|game|match)"
+    r"|officially\s+commenced"
+    r"|came\s+together\s+for\s+an\s+opening"
+    r"|naging\s+matagumpay"
     r"|came\s+together"
     r"|held\s+(last|on)\s+(september|august|july|june|january|february|march|april|may|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
     r"|photo\s+(highlight|album|recap|documentation)"
@@ -35,6 +40,12 @@ _RETROSPECTIVE_PHRASES = re.compile(
     r"|naging\s+makulay"
     r"|nagtapos\s+na\s+ang"
     r"|natapos\s+na"
+    r"|victory\s+over"
+    r"|defeated"
+    r"|won\s+against"
+    r"|edged\s+out"
+    r"|loss\s+to"
+    r"|final\s+score"
     r"|on\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2},?\s+the"
     r")",
     flags=re.IGNORECASE,
@@ -178,20 +189,19 @@ def _next_ext_id_for_category(category: str) -> str:
             .table("academic_lgu_events")
             .select("id")
             .ilike("id", f"{base}_%")
-            .order("id", desc=True)
-            .limit(1)
             .execute()
         )
         rows = res.data if hasattr(res, "data") else res
 
-        if rows:
-            last_id = rows[0].get("id") if isinstance(rows[0], dict) else None
-            if last_id:
-                try:
-                    last_num = int(last_id.rsplit("_", 1)[-1])
-                    return f"{base}_{(last_num + 1):04d}"
-                except Exception:
-                    pass
+        pattern = re.compile(rf"^{re.escape(base)}_(\d+)$")
+        nums = []
+        for r in rows:
+            if isinstance(r, dict) and "id" in r:
+                m = pattern.match(r["id"])
+                if m:
+                    nums.append(int(m.group(1)))
+        if nums:
+            return f"{base}_{(max(nums) + 1):04d}"
     except Exception:
         pass
     return f"{base}_0001"
@@ -281,6 +291,125 @@ def is_olfu_antipolo_post(text: str) -> bool:
         return False
 
     return False
+
+
+def is_ue_manila_post(text: str) -> bool:
+    """
+    Designated UE Campus Filter:
+    The University of the East official Facebook page (UniversityoftheEastUE)
+    posts announcements for both UE Manila (LRT-2 Recto station) and UE Caloocan
+    (Samson Road, Caloocan City - outside LRT-2 transit corridor).
+
+    Rules:
+    1. Systemwide announcements ('all campuses', 'both campuses', 'manila and caloocan',
+       'caloocan and manila', 'entire university', 'across all campuses', 'ue community'):
+       - Check if Manila is specifically excepted (e.g. 'except UE Manila', 'maliban sa Manila').
+       - If Manila is NOT excepted, ACCEPT (affects LRT-2 Recto).
+       - If Manila IS excepted, REJECT.
+    2. Explicit Manila mentions ('ue manila', 'manila campus', 'gastambide', 'c.m. recto', 'recto campus'):
+       - ACCEPT.
+    3. Explicit Caloocan mentions ('ue caloocan', 'caloocan campus', 'samson road', 'caloocan open field',
+       'ue-caloocan') without mentioning Manila or systemwide:
+       - REJECT (outside LRT-2 transit corridor).
+    4. Default:
+       - If neither campus is explicitly distinguished, default to True (as UE Manila is the primary
+         institutional seat and historical default for LRT-2 Recto).
+    """
+    t = text.casefold()
+
+    is_systemwide = any(k in t for k in [
+        "all campuses",
+        "all ue campuses",
+        "both campuses",
+        "both ue campuses",
+        "manila and caloocan",
+        "caloocan and manila",
+        "entire university",
+        "across all campuses",
+        "lahat ng campus",
+        "ue community",
+    ])
+
+    if is_systemwide:
+        manila_excepted = bool(re.search(
+            r"(?:except|excluding|maliban\s+sa|bukod\s+sa)\s+(?:(?:for|sa)\s+)?(?:ue\s+)?manila",
+            t
+        ))
+        if manila_excepted:
+            return False
+        return True
+
+    # If explicitly targeting Caloocan and NOT mentioning Manila
+    mentions_caloocan = any(k in t for k in [
+        "caloocan", "ue caloocan", "cal campus", "ue-cal",
+        "ue-caloocan", "samson rd", "samson road"
+    ])
+    mentions_manila = any(k in t for k in [
+        "manila", "ue manila", "gastambide", "c.m. recto", "cm recto", "recto"
+    ])
+
+    if mentions_caloocan and not mentions_manila:
+        return False
+
+    return True
+
+
+def is_off_corridor_venue(text: str) -> bool:
+    """
+    Check whether an announcement describes an event physically held at an
+    off-corridor mega venue or stadium outside the LRT-2 transit corridor:
+      - SM Mall of Asia Arena (Pasay City — served by LRT-1/MRT-3)
+      - SMX Convention Center (Pasay City)
+      - Philippine International Convention Center (PICC, Pasay City)
+      - San Andres Sports Complex (Malate, Manila District 5)
+      - Philippine Arena (Bocaue, Bulacan)
+      - World Trade Center (Pasay City)
+
+    If the text explicitly mentions an LRT-2 station or the LRT-2 transit line,
+    it is not treated as strictly off-corridor.
+    """
+    t = text.casefold()
+    off_corridor_patterns = [
+        r"mall\s+of\s+asia\s+arena",
+        r"\bmoa\s+arena\b",
+        r"smx\s+convention",
+        r"philippine\s+international\s+convention\s+center",
+        r"\bpicc\b",
+        r"world\s+trade\s+center",
+        r"san\s+andres\s+sports\s+complex",
+        r"philippine\s+arena",
+        r"\bbocaue\b",
+    ]
+    if any(re.search(pat, t) for pat in off_corridor_patterns):
+        corridor_stations = [
+            "recto", "legarda", "pureza", "v. mapa", "v.mapa", "j. ruiz", "j.ruiz",
+            "gilmore", "betty go", "cubao", "araneta", "anonas", "katipunan",
+            "santolan", "marikina", "antipolo", "lrt-2", "lrt 2", "line 2"
+        ]
+        if not any(k in t for k in corridor_stations):
+            return True
+    return False
+
+
+def is_micro_venue_or_administrative(text: str) -> bool:
+    """
+    Check whether an event announcement is a micro-venue recital, ticket selling booth,
+    online admissions form deadline, or civic theme month that must not trigger MAJOR_ARENA_EVENT.
+    """
+    t = text.casefold()
+    patterns = [
+        r"ticket\s+(?:selling|booth|reservation|availability)",
+        r"dance\s+studio",
+        r"covered\s+court",
+        r"children'?s\s+choir",
+        r"foundation\s+anniversary",
+        r"yellow\s+day",
+        r"upcat\s+application\s+deadline",
+        r"submission\s+of\s+forms",
+        r"demobiliz",
+    ]
+    return any(re.search(pat, t) for pat in patterns)
+
 
 
 def _determine_category(llm_res: dict, page: dict) -> str | None:
@@ -471,6 +600,17 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                     print("  Skipped OLFU post: Does not mention Antipolo branch or systemwide notice.")
                     continue
 
+            # UE filter: only accept posts for Manila branch or systemwide notices
+            if "universityoftheeast" in page["url"].casefold() or "university of the east" in page["name"].casefold():
+                if not is_ue_manila_post(combined):
+                    print("  Skipped UE post: Specific to Caloocan campus (outside LRT-2 corridor).")
+                    continue
+
+            # Off-corridor venue filter: skip posts explicitly held at off-corridor arenas (MOA Arena, PICC, San Andres, etc.)
+            if is_off_corridor_venue(combined):
+                print("  Skipped off-corridor venue post (SM MOA Arena, PICC, or San Andres outside LRT-2 corridor).")
+                continue
+
             # PRE-FILTER with keywords (case-insensitive via classify_post using .casefold())
             pre_category = classify_post(combined, source_type=page.get("source_type"))
             if pre_category is None:
@@ -534,16 +674,18 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                             print(f"  Skipped past historical/commemorative post ({date_match.group(0)} is > 14 days ago).")
                             continue
 
+                        # Micro-venue & ticket booth suppression (MAJOR_ARENA_EVENT only)
+                        if event_code_val == "MAJOR_ARENA_EVENT" and is_micro_venue_or_administrative(combined):
+                            print(f"  Skipped micro-venue/ticket booth post ({date_match.group(0)}) from MAJOR_ARENA_EVENT.")
+                            continue
+
                         # Retrospective Photo Recap Guardrail (MAJOR_ARENA_EVENT only)
-                        # If the event_date is more than 1 day before the post_date AND the
-                        # post contains retrospective phrasing, this is a photo album / recap
-                        # posted after the event concluded — not a forward disruption notice.
+                        # If the event_date is on/before the post_date AND contains recap phrasing,
+                        # or is >= 1 day in the past, this is a recap posted after the event.
                         if event_code_val == "MAJOR_ARENA_EVENT" and post_age_days is not None:
                             computed_post_date = now - timedelta(days=post_age_days)
                             days_in_past = (computed_post_date.date() - extracted_dt.date()).days
-                            is_retrospective = days_in_past > 1 or (
-                                days_in_past > 0 and bool(_RETROSPECTIVE_PHRASES.search(combined))
-                            )
+                            is_retrospective = days_in_past >= 1 or bool(_RETROSPECTIVE_PHRASES.search(combined))
                             if is_retrospective:
                                 print(f"  Skipped retrospective recap post: event_date={date_match.group(0)} was {days_in_past}d before post_date. Not a forward disruption notice.")
                                 continue

@@ -1,6 +1,6 @@
 [
   {"batch": "Eastbound", "station": "Recto",        "name": "Manila Public Information Office",         "source_type": "lgu",      "tier": "lgu",   "url": "https://www.facebook.com/ManilaPIO"},
-  {"batch": "Eastbound", "station": "Recto",        "name": "University of the East Manila",            "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/UniversityoftheEastUE"},
+  {"batch": "Eastbound", "station": "Recto",        "name": "University of the East",                   "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/UniversityoftheEastUE"},
   {"batch": "Eastbound", "station": "Recto",        "name": "University of the East Student Council",  "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/UEUSC/"},
   {"batch": "Eastbound", "station": "Recto",        "name": "Far Eastern University Manila",            "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/FarEasternUniversity"},
   {"batch": "Eastbound", "station": "Recto",        "name": "FEU Central Student Organization",        "source_type": "academic", "tier": "major", "url": "https://www.facebook.com/feucentralstudentorganization/"},

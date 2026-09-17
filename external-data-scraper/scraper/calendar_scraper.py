@@ -91,6 +91,9 @@ STRUCTURAL_SIGNALS = [
 NEGATIVE_KEYWORDS = [
     "draft", "drafting", "proposed", "tentative",
     "subject to change", "preliminary",
+    "petition", "resubmitted petition", "advocacy",
+    "shift to evm", "enhanced virtual mode", "position paper",
+    "appeal", "resolution", "statement on", "transport strike",
 ]
 
 # ---------------------------------------------------------------------------
@@ -99,6 +102,7 @@ NEGATIVE_KEYWORDS = [
 ACRONYM_MAP = {
     "polytechnic university of the philippines main": "PUP",
     "pup sentral na konseho ng mag-aaral": "PUP_SKM",
+    "university of the east": "UE",
     "university of the east manila": "UE",
     "university of the east student council": "UE_USC",
     "far eastern university manila": "FEU",
@@ -157,19 +161,18 @@ def _next_calendar_id() -> str:
             .table("academic_lgu_events")
             .select("id")
             .ilike("id", f"{base}_%")
-            .order("id", desc=True)
-            .limit(1)
             .execute()
         )
         rows = res.data if hasattr(res, "data") else res
-        if rows:
-            last_id = rows[0].get("id") if isinstance(rows[0], dict) else None
-            if last_id:
-                try:
-                    last_num = int(last_id.rsplit("_", 1)[-1])
-                    return f"{base}_{(last_num + 1):04d}"
-                except Exception:
-                    pass
+        pattern = re.compile(rf"^{re.escape(base)}_(\d+)$")
+        nums = []
+        for r in rows:
+            if isinstance(r, dict) and "id" in r:
+                m = pattern.match(r["id"])
+                if m:
+                    nums.append(int(m.group(1)))
+        if nums:
+            return f"{base}_{(max(nums) + 1):04d}"
     except Exception:
         pass
     return f"{base}_0001"
@@ -190,6 +193,11 @@ def is_valid_calendar_post(text: str) -> bool:
     normalized = normalize_unicode_text(text)
     lowered = normalized.casefold()
 
+    # Check negative keywords first (immediate rejection)
+    has_negative = any(kw in lowered for kw in NEGATIVE_KEYWORDS)
+    if has_negative:
+        return False
+
     # Check primary identifier
     has_primary = any(kw in lowered for kw in PRIMARY_IDENTIFIERS)
     if not has_primary:
@@ -206,9 +214,13 @@ def is_valid_calendar_post(text: str) -> bool:
     if not (has_action or has_structural):
         return False
 
-    # Check negative keywords (reject)
-    has_negative = any(kw in lowered for kw in NEGATIVE_KEYWORDS)
-    if has_negative:
+    # Guard against incidental body references (e.g., "...impact on the academic calendar...")
+    # The primary identifier should appear in early text/header (first 300 chars)
+    # OR be accompanied by document/drive structural release signals.
+    first_300 = lowered[:300]
+    has_primary_in_header = any(kw in first_300 for kw in PRIMARY_IDENTIFIERS)
+    has_release_headline = any(k in first_300 for k in ["calendar", "schedule", "academic year", "ay 20", "a.y. 20"])
+    if not (has_primary_in_header or (has_structural and has_release_headline)):
         return False
 
     return True
