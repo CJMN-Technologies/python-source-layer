@@ -46,6 +46,12 @@ _RETROSPECTIVE_PHRASES = re.compile(
     r"|edged\s+out"
     r"|loss\s+to"
     r"|final\s+score"
+    r"|thank\s+you\s+to\s+our\s+partner"
+    r"|couldn'?t\s+have\s+done\s+it\s+without"
+    r"|partner\s+companies"
+    r"|sponsors?\s+and\s+partners?"
+    r"|one\s+to\s+remember"
+    r"|for\s+helping\s+make\s+the"
     r"|on\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2},?\s+the"
     r")",
     flags=re.IGNORECASE,
@@ -407,6 +413,10 @@ def is_micro_venue_or_administrative(text: str) -> bool:
         r"upcat\s+application\s+deadline",
         r"submission\s+of\s+forms",
         r"demobiliz",
+        r"foro\s+de\s+intramuros",
+        r"tourism\s+expo",
+        r"heritage\s+spaces",
+        r"intramuros\s+administration",
     ]
     return any(re.search(pat, t) for pat in patterns)
 
