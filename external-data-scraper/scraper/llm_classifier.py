@@ -67,6 +67,10 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - When an announcement mentions a month and day without an explicit year (e.g. "August 13" or "Thursday, August 13"), ALWAYS set event_date using the current reference year ({ref_year}, e.g. "{ref_year}-08-13").
    - NEVER output past years (e.g. 2024 or 2025) for freshly scraped current advisories unless the post text explicitly states that past year.
 
+3b. SPECIFIC DISRUPTION DATES vs COLLOQUIAL "THIS WEEK" PHRASES (STRICT DURATION GUARDRAIL):
+   - When a post explicitly states the exact dates or days of a transport strike, class suspension, or holiday (e.g. "on September 21–22, 2026", "on Monday and Tuesday, September 21–22"), ALWAYS extract precisely those specific dates (e.g. "{ref_year}-09-21 to {ref_year}-09-22").
+   - NEVER expand event_date to the entire work/academic week (e.g. "{ref_year}-09-21 to {ref_year}-09-26") just because the announcement uses administrative or contextual phrasing like "swap their scheduled learning modalities for this week", "modality swap for this week", "schedule for this week", or "in light of this week's strike"! The event_date MUST strictly reflect the active disruption duration (e.g. the 2-day strike window), NOT the entire 6-day academic week.
+
 4. CANCELLATION / RESUMPTION DETECTION (STRICT DEFINITIONS):
    - STRICT DEFINITION: is_cancellation must ONLY be true when an existing disruption/strike/suspension/exam is officially LIFTED, CALLED OFF, CANCELLED, or when classes/work RESUME (returning to normal operations).
      * Example: "Transport Strike is Called Off" -> is_cancellation = true, cancellation_target_code = "TRANSPORT_STRIKE", event_code = "TRANSPORT_STRIKE"
