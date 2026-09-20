@@ -53,6 +53,8 @@ _RETROSPECTIVE_PHRASES = re.compile(
     r"|one\s+to\s+remember"
     r"|for\s+helping\s+make\s+the"
     r"|on\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2},?\s+the"
+    r"|idinaos\s+na"
+    r"|napuno\s+ng\s+masasayang\s+aktibidad"
     r")",
     flags=re.IGNORECASE,
 )
@@ -385,6 +387,8 @@ def is_off_corridor_venue(text: str) -> bool:
         r"san\s+andres\s+sports\s+complex",
         r"philippine\s+arena",
         r"\bbocaue\b",
+        r"\bbanawe\b",
+        r"\bchinatown\b",
     ]
     if any(re.search(pat, t) for pat in off_corridor_patterns):
         corridor_stations = [
@@ -417,6 +421,9 @@ def is_micro_venue_or_administrative(text: str) -> bool:
         r"tourism\s+expo",
         r"heritage\s+spaces",
         r"intramuros\s+administration",
+        r"banawe",
+        r"chinatown",
+        r"mooncake\s+fest(?:ival)?",
     ]
     return any(re.search(pat, t) for pat in patterns)
 
@@ -535,6 +542,9 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                 cluster = _get_institution_cluster(row.get("source_name") or "")
                 if cluster and dt and cd in _CLUSTER_DEDUP_CODES:
                     existing_code_keys.add((f"__cluster__{cluster}", dt, cd))
+                    start_date_m = re.match(r"^(\d{4}-\d{2}-\d{2})", dt)
+                    if start_date_m:
+                        existing_code_keys.add((f"__cluster__{cluster}", start_date_m.group(1), cd))
 
         print(f"Loaded {len(existing_urls)} URLs, {len(existing_event_keys)} unique events, and {len(existing_code_keys)} code keys from database.")
     except Exception as e:
@@ -668,7 +678,9 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
             cluster_key = _get_institution_cluster(page["name"])
             if cluster_key and dt_key and event_code_val in _CLUSTER_DEDUP_CODES:
                 cluster_code_tuple = (f"__cluster__{cluster_key}", dt_key, event_code_val)
-                if cluster_code_tuple in existing_code_keys:
+                start_date_m = re.match(r"^(\d{4}-\d{2}-\d{2})", dt_key)
+                start_date_tuple = (f"__cluster__{cluster_key}", start_date_m.group(1), event_code_val) if start_date_m else None
+                if cluster_code_tuple in existing_code_keys or (start_date_tuple and start_date_tuple in existing_code_keys):
                     print(f"  Skipped cluster duplicate {event_code_val} from [{page['name']}] (cluster: {cluster_key}) on '{event_date}' — another page from the same institution already filed this code.")
                     continue
 
@@ -745,6 +757,9 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                 cluster_key = _get_institution_cluster(page["name"])
                 if cluster_key and dt_key and event_code_val in _CLUSTER_DEDUP_CODES:
                     existing_code_keys.add((f"__cluster__{cluster_key}", dt_key, event_code_val))
+                    start_date_m = re.match(r"^(\d{4}-\d{2}-\d{2})", dt_key)
+                    if start_date_m:
+                        existing_code_keys.add((f"__cluster__{cluster_key}", start_date_m.group(1), event_code_val))
 
                 total_saved += 1
                 newly_saved_events.append({
