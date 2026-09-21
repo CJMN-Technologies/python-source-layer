@@ -106,7 +106,8 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - For routine photoshoots, application deadlines, and student council helpdesks, output category = null.
 
 9. TRAFFIC, NUMBER CODING, AND CIVIC CARAVAN ADVISORIES:
-   - MMDA or LGU announcements regarding "Suspension of Number Coding Scheme", "Expanded Number Coding", "Traffic Advisory", or "LTO Driving Course / Caravan" are municipal traffic/civic management notices.
+   - MMDA or LGU announcements regarding "Suspension of Number Coding Scheme", "Expanded Number Coding", "Traffic Advisory", "Abiso sa mga Motorista", or "LTO Driving Course / Caravan" are municipal traffic/civic management notices.
+   - Motorist traffic advisories ("Abiso sa mga motorista", "mabagal na daloy ng trapiko", "alternatibong ruta", road rerouting) regarding congestion around landmarks (e.g. "paligid ng EDSA People Power Monument") are strictly CIVIC_MAINTENANCE. NEVER classify them as CLASS_SUSPENSION, and they must NEVER be mistaken for statutory holidays!
    - Category MUST be "lgu" (never "academic").
    - event_code MUST be "CIVIC_MAINTENANCE".
    - is_cancellation MUST be false.

@@ -341,6 +341,7 @@ Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_t
 - **GitHub Actions Free Quota Optimization** — Redundant half-hourly watchdog polling is disabled; primary weather pipelines run with built-in 5x retries, keeping overall monorepo consumption at ~750 minutes/month (well within the 2,000 min/mo private repository quota).
 - **Retrospective Photo Recap Guardrail** — See [Deduplication Layer 4](#deduplication) above. Applied in `pipeline.py` at post-classification time (before database write) and mirrored in the `external.sync_academic_lgu_to_events_consolidated` database trigger as a secondary defense.
 - **Institutional Cluster Deduplication** — See [Deduplication Layer 5](#deduplication) above. Prevents student council or affiliate pages from doubling the disruption weight of an event already reported by the institution's official administration page.
+- **Motorist Traffic Advisory vs Holiday Guardrail** — Traffic management advisories issued for road motor vehicles (e.g. *"Abiso sa mga motorista"*, *"alternatibong ruta"*, *"pagbagal ng daloy ng trapiko"*) around highway landmarks (e.g. EDSA People Power Monument) are classified as non-disruptive `CIVIC_MAINTENANCE` (`affects_ridership = FALSE`) and prohibited from triggering statutory holiday or class suspension shocks.
 
 ## Email Alerts
 
