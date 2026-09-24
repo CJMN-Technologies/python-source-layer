@@ -182,6 +182,18 @@ STRONG_RELEVANT_KEYWORDS = [
     "regular holiday",
     "special non-working holiday",
     "non-working holiday",
+    "special non-working days",
+    "special non-working day",
+    "special non working days",
+    "special non working day",
+    "non-working days",
+    "non-working day",
+    "non working days",
+    "non working day",
+    "special working days",
+    "special working day",
+    "proclamation no.",
+    "asean summit",
     "school holiday",
     "academic holiday",
     "holiday break",
@@ -621,7 +633,8 @@ def scrape_pages_batch(
                 "advisory", "announcement", "walang pasok", "suspension", "suspendido",
                 "shift", "classes", "notice", "circular", "memorandum", "guidelines",
                 "pasok", "schedule", "modalities", "weather", "typhoon", "bagyo",
-                "strike", "holiday", "virtual mode", "enriched virtual"
+                "strike", "holiday", "virtual mode", "enriched virtual",
+                "non-working", "special non-working", "breaking", "proclamation"
             )
 
             media_list = item.get("media") or []
