@@ -8,4 +8,11 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
-scratch/
+scratch/
+[Aa]cademic [Pp]aper/
+[Aa]cademic-[Pp]aper/
+academic_paper/
+*manuscript*
+*Manuscript*
+*.docx
+
