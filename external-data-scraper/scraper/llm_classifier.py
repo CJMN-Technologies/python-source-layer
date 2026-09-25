@@ -119,7 +119,7 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
 
 11. YOUTH, CULTURAL, AND TECHNOLOGY FESTIVALS vs WEATHER DISRUPTIONS:
    - Youth summits, technology festivals (e.g. Teknolodi Fest, Buwan ng Kabataan), esports events, and student assemblies are civic/cultural gatherings.
-   - If held at major sports complexes or public venues attracting transit commuters, classify with category = "lgu" or "academic", event_code = "MAJOR_ARENA_EVENT".
+   - If held at major sports complexes or public venues directly along the transit corridor attracting tens of thousands of transit commuters, classify with category = "lgu" or "academic", event_code = "MAJOR_ARENA_EVENT".
    - NEVER classify youth festivals, cultural celebrations, or student conferences as WEATHER_ADVISORY!
 
 12. DISASTER RELIEF OPERATIONS & DONATION DRIVES:
@@ -131,6 +131,15 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - Do NOT classify as CLASS_SUSPENSION, and do NOT set event_date to January 1st!
    - These are non-disruptive informational reference schedules / proclamations published months in advance.
    - For nationwide full-year holiday lists or calendar releases, output category = null (or event_code = "CIVIC_MAINTENANCE" with is_cancellation = false).
+
+14. HYPER-LOCAL STREET MARKETS, BAZAARS, FOOD EXPOS & GUIDED TOURS (STRICT NEGATIVE RULE):
+   - Local barangay pop-up markets, street food fairs, youth night markets, tiangge, and neighborhood bazaars (e.g. "Pop Up Payatas Youth Market Expo", "Street Food Fair", "Barangay Bazaar", "Market Expo") are hyper-local neighborhood retail activities, NOT major transit-disrupting arena events!
+   - Small guided municipal tours (e.g. 40-pax Pasig River ferry tour, walking tours) have micro capacity and do not impact rail traffic.
+   - For street food markets, pop-ups, bazaars, and river tours, output category = null (reject — no rail transit disruption) or event_code = "CIVIC_MAINTENANCE". NEVER classify them as MAJOR_ARENA_EVENT!
+
+15. OFF-CORRIDOR PROVINCIAL VENUES & RETROSPECTIVE AWARD RECAPS (STRICT NEGATIVE RULE):
+   - Competitions, sports matches, drumline battles, or festivals held in venues far outside Metro Manila or outside the LRT-2 transit walkshed (e.g. Strike Gymnasium in Bacoor Cavite, Laguna, Batangas, Bulacan, Pampanga) do not affect LRT-2 ridership. Output category = null.
+   - Congratulatory and retrospective award recaps celebrating past wins or competition results (e.g. "Congratulations to...", "Bagged the championship", "Musiko drumline battle champion", "Won first place at...") posted after an event took place are retrospective celebrations, NOT forward-looking transit disruption notices. Output category = null.
 
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:

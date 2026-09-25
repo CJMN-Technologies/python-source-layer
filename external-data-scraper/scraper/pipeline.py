@@ -55,6 +55,13 @@ _RETROSPECTIVE_PHRASES = re.compile(
     r"|on\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2},?\s+the"
     r"|idinaos\s+na"
     r"|napuno\s+ng\s+masasayang\s+aktibidad"
+    r"|\bcongratulat(?:ions?|ory)\b"
+    r"|\bpagbati\b"
+    r"|\bchampion(?:ship)?\b"
+    r"|\bbagged\b"
+    r"|\bwon\s+(?:the|against|first|championship)\b"
+    r"|\bmusiko\b"
+    r"|\bdrumline\b"
     r")",
     flags=re.IGNORECASE,
 )
@@ -389,6 +396,13 @@ def is_off_corridor_venue(text: str) -> bool:
         r"\bbocaue\b",
         r"\bbanawe\b",
         r"\bchinatown\b",
+        r"strike\s+gymnasium",
+        r"\bbacoor\b",
+        r"\bcavite\b",
+        r"\blaguna\b",
+        r"\bbulacan\b",
+        r"\bpampanga\b",
+        r"\bpayatas\b",
     ]
     if any(re.search(pat, t) for pat in off_corridor_patterns):
         corridor_stations = [
@@ -404,7 +418,8 @@ def is_off_corridor_venue(text: str) -> bool:
 def is_micro_venue_or_administrative(text: str) -> bool:
     """
     Check whether an event announcement is a micro-venue recital, ticket selling booth,
-    online admissions form deadline, or civic theme month that must not trigger MAJOR_ARENA_EVENT.
+    street food bazaar, river ferry tour, online admissions form deadline, or civic theme month
+    that must not trigger MAJOR_ARENA_EVENT.
     """
     t = text.casefold()
     patterns = [
@@ -424,6 +439,15 @@ def is_micro_venue_or_administrative(text: str) -> bool:
         r"banawe",
         r"chinatown",
         r"mooncake\s+fest(?:ival)?",
+        r"pop[\s_-]*up",
+        r"market[\s_-]*expo",
+        r"\bbazaar\b",
+        r"\btiangge\b",
+        r"night[\s_-]*market",
+        r"street[\s_-]*food",
+        r"youth[\s_-]*market",
+        r"river\s+ferry\s+tour",
+        r"guided\s+tour",
     ]
     return any(re.search(pat, t) for pat in patterns)
 
@@ -696,20 +720,32 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                             print(f"  Skipped past historical/commemorative post ({date_match.group(0)} is > 14 days ago).")
                             continue
 
-                        # Micro-venue & ticket booth suppression (MAJOR_ARENA_EVENT only)
+                        # Micro-venue & street food bazaar suppression (MAJOR_ARENA_EVENT only)
                         if event_code_val == "MAJOR_ARENA_EVENT" and is_micro_venue_or_administrative(combined):
-                            print(f"  Skipped micro-venue/ticket booth post ({date_match.group(0)}) from MAJOR_ARENA_EVENT.")
+                            print(f"  Skipped micro-venue/bazaar/ticket booth post ({date_match.group(0)}) from MAJOR_ARENA_EVENT.")
                             continue
 
-                        # Retrospective Photo Recap Guardrail (MAJOR_ARENA_EVENT only)
+                        # Off-corridor & provincial venue suppression (MAJOR_ARENA_EVENT only)
+                        if event_code_val == "MAJOR_ARENA_EVENT" and is_off_corridor_venue(combined):
+                            print(f"  Skipped off-corridor/provincial venue post ({date_match.group(0)}) from MAJOR_ARENA_EVENT.")
+                            continue
+
+                        # Retrospective Photo Recap & Award Guardrail (MAJOR_ARENA_EVENT only)
                         # If the event_date is on/before the post_date AND contains recap phrasing,
-                        # or is >= 1 day in the past, this is a recap posted after the event.
-                        if event_code_val == "MAJOR_ARENA_EVENT" and post_age_days is not None:
-                            computed_post_date = now - timedelta(days=post_age_days)
-                            days_in_past = (computed_post_date.date() - extracted_dt.date()).days
-                            is_retrospective = days_in_past >= 1 or bool(_RETROSPECTIVE_PHRASES.search(combined))
+                        # or is >= 1 day in the past, or contains celebratory/award phrasing,
+                        # this is a recap posted after the event.
+                        if event_code_val == "MAJOR_ARENA_EVENT":
+                            is_retrospective = False
+                            if post_age_days is not None:
+                                computed_post_date = now - timedelta(days=post_age_days)
+                                days_in_past = (computed_post_date.date() - extracted_dt.date()).days
+                                if days_in_past >= 1:
+                                    is_retrospective = True
+                            if not is_retrospective and bool(_RETROSPECTIVE_PHRASES.search(combined)):
+                                is_retrospective = True
+
                             if is_retrospective:
-                                print(f"  Skipped retrospective recap post: event_date={date_match.group(0)} was {days_in_past}d before post_date. Not a forward disruption notice.")
+                                print(f"  Skipped retrospective recap/award post: event_date={date_match.group(0)}. Not a forward disruption notice.")
                                 continue
                     except Exception:
                         pass
