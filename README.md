@@ -44,13 +44,13 @@ This avoids one huge README while still giving each teammate the context they ne
 | Supabase REST client | `supabase-py` |
 | Direct PostgreSQL client | `psycopg2-binary` |
 | Data processing | `pandas`, `openpyxl` |
-| Web scraping & Social Ingestion | Apify Cloud Client (`apify-client`), Requests, BeautifulSoup |
+| Web scraping & Social Ingestion | Apify Cloud Client (`apify-client`), Requests |
 | OCR & Image text extraction | Google Gemini 2.0 Flash (`google-genai`) with Pillow and NumPy for image pre-processing |
 | LLM Classification | Google Gemini 2.0 Flash (`google-genai`) with Pydantic structured output |
 | Unicode normalization | Custom mapper for decorative Facebook text (Mathematical Bold, Script, Double-Struck, etc.) |
 | Weather API | Open-Meteo Forecast API |
 | Email Alerts | `smtplib` (Gmail SMTP with TLS) |
-| Scheduling | GitHub Actions cron, APScheduler for local long-running schedulers |
+| Scheduling | cron-job.org (triggers GitHub Actions `workflow_dispatch` via API for exact-second precision), APScheduler for local long-running schedulers |
 | Configuration | `.env` files, GitHub Actions secrets |
 
 ## Classification & Stealth Scraping Pipeline
@@ -111,17 +111,29 @@ Post categories:
 | `pagasa` | PAGASA weather bulletins relevant to NCR / LRT-2 catchment areas |
 | `academic_calendar` | A post sharing a full academic calendar document (triggers Excel generation + email) |
 
-## GitHub Actions Tiered Scraping Schedule
+## Scheduling (cron-job.org)
 
-The events scraper runs **3 times per day** via GitHub Actions cron (scheduled at off-peak minutes to avoid global runner queue contention), each with a purpose-built role and intensity:
+All automated pipelines are triggered by **cron-job.org** which calls GitHub's `workflow_dispatch` API for exact-second precision. GitHub Actions' built-in cron scheduler was removed due to unreliable delays (up to several minutes late).
+
+### Events Scraper — Tiered Schedule
+
+The events scraper runs **3 times per day**, each with a purpose-built role and intensity:
 
 | Run | Time (PHT) | Mode | Role | Window | Posts | Est. Cost |
 | --- | --- | --- | --- | --- | --- | --- |
-| Morning sweep | 4:18 AM (20:18 UTC) | `strong` | Primary daily sweep — catches all events from the past 24h | 24h | ~150 | ~$0.75 |
-| Mid-day catcher | 11:23 AM (03:23 UTC) | `medium` | Catches morning class suspensions + 4 AM cap overflows | 8h | ~72 | ~$0.36 |
-| Afternoon watchdog | 4:14 PM (08:14 UTC) | `light` | Late LGU advisories, afternoon road closures | 4h | ~36 | ~$0.18 |
+| Morning sweep | 4:00 AM | `strong` | Primary daily sweep — catches all events from the past 24h | 24h | ~150 | ~$0.75 |
+| Mid-day catcher | 11:00 AM | `medium` | Catches morning class suspensions + 4 AM cap overflows | 8h | ~72 | ~$0.36 |
+| Afternoon watchdog | 4:00 PM | `light` | Late LGU advisories, afternoon road closures | 4h | ~36 | ~$0.18 |
 
 **Budget:** ~258 posts/day → ~$1.29/day → ~**$40/month** (Apify Starter $29 + ~$11 overage at $0.005/result Pay-per-event billing, confirmed from Apify dashboard).
+
+### Weather Pipeline — Hourly
+
+Runs every hour from 5:00 AM to 10:00 PM PHT (`0 5-22 * * *`), updating current observations and 7-day forecasts for all 13 LRT-2 stations.
+
+### Weather Watchdog — Manual Only
+
+Retained as an emergency manual-trigger workflow. Not scheduled — the primary weather pipeline's built-in 5× retries and 3-level fallbacks make a scheduled watchdog unnecessary.
 
 ## Environment Variables
 
@@ -140,18 +152,18 @@ The repo uses several secrets and environment variables for its pipelines:
 | `SENDER_PASSWORD` | Facebook scraper | Gmail app password for SMTP authentication. |
 | `RECEIVER_EMAIL` | Facebook scraper | Comma-separated list of email recipients for alerts and calendar attachments. |
 
-Do not commit `.env`, API keys, cookies, certificates, source workbooks, logs, or generated cache files.
+Do not commit `.env`, API keys, certificates, source workbooks, logs, or generated cache files.
 
-## GitHub Actions
+## GitHub Actions Workflows
 
-The active workflow files are in `.github/workflows/` at the repository root:
+The workflow files are in `.github/workflows/` at the repository root. All scheduled pipelines are triggered externally by **cron-job.org** via `workflow_dispatch` for exact-second precision.
 
-| Workflow | File | Schedule | Purpose |
-| --- | --- | --- | --- |
-| Events Pipeline | `events_pipeline.yml` | 4:18 AM, 11:23 AM, and 4:14 PM PHT daily (3 off-peak windows) | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
-| Calendar Scraper | `calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | Scrapes for academic calendar releases, generates `.xlsx` files, and auto-commits them to the repo. |
-| Weather Pipeline | `weather_pipeline.yml` | Hourly from 5:00 AM to 10:00 PM PHT (`0 21-23,0-14 * * *`) | Updates current weather observations and 7-day forecasts for all 13 LRT-2 stations. |
-| Weather Watchdog | `weather_watchdog_pipeline.yml` | Half-hourly backup from 5:30 AM to 10:30 PM PHT (`30 21-23,0-14 * * *`) | Secondary failover watchdog ensuring station weather metrics remain updated. |
+| Workflow | File | Schedule | Trigger | Purpose |
+| --- | --- | --- | --- | --- |
+| Events Pipeline | `events_pipeline.yml` | 4:00 AM, 11:00 AM, 4:00 PM PHT daily | cron-job.org | Scrapes Facebook pages for LRT-2 disruption events. Supports manual dispatch with batch selection. |
+| Calendar Scraper | `calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | GitHub cron | Scrapes for academic calendar releases, generates `.xlsx` files, and auto-commits them to the repo. |
+| Weather Pipeline | `weather_pipeline.yml` | Hourly 5:00 AM–10:00 PM PHT | cron-job.org | Updates current weather observations and 7-day forecasts for all 13 LRT-2 stations. |
+| Weather Watchdog | `weather_watchdog_pipeline.yml` | Manual only | `workflow_dispatch` | Emergency fallback for stale weather data. Not scheduled. |
 
 ## Security Notes
 
@@ -159,7 +171,7 @@ The active workflow files are in `.github/workflows/` at the repository root:
 - Rotate any secret that was ever pushed publicly, even if Git history was later rewritten.
 - Source datasets are intentionally ignored under `data/new_raw/` and `data/read_data/`.
 - Certificates are ignored and should be installed locally by each developer.
-- Facebook cookies should be rotated regularly. The pipeline sends automated email alerts when cookies expire.
+- Ensure `APIFY_API_TOKEN` and `GEMINI_API_KEY` are configured with sufficient operational quota.
 
 ## First-Time Setup
 
