@@ -28,8 +28,7 @@ Post categories:
 | Technology | Purpose |
 | --- | --- |
 | Python 3.12 | Main pipeline language |
-| Playwright | Opens Facebook pages in headless Chromium |
-| BeautifulSoup | Parses rendered HTML for post extraction |
+| Apify Cloud Client (`apify-client`) | Cloud actor for headless page retrieval and post extraction |
 | Requests | Downloads image assets for OCR |
 | Google Gemini 2.0 Flash (`google-genai`) | OCR (extracts text from post images) and LLM classification (categorizes posts and extracts event details) |
 | Pillow + NumPy | Image loading and pre-processing before Gemini OCR |
@@ -44,25 +43,23 @@ Post categories:
 
 | File | Purpose |
 | --- | --- |
-| `pipeline.py` | Main events scraper pipeline — scrapes pages, classifies posts, deduplicates, and saves to Supabase. Supports batch selection (A/B/C/D). Implements 5-layer deduplication including a same-day retrospective photo recap guardrail, institutional cluster deduplication, off-corridor venue geofencing (`is_off_corridor_venue()`), and micro-venue / administrative ticket booth suppression (`is_micro_venue_or_administrative()`). |
-| `fb_scraper.py` | Core Playwright scraping engine — page loading, caption expansion, permalink extraction, post age parsing, Gemini OCR text extraction, resource blocking. |
-| `auth.py` | Builds Facebook cookie profiles from environment variables. Supports multiple accounts (primary + up to 9 backups). |
+| `pipeline.py` | Main events scraper pipeline: scrapes pages, classifies posts, deduplicates, and saves to Supabase. Supports batch selection (A/B/C/D). Implements 5-layer deduplication including a same-day retrospective photo recap guardrail, institutional cluster deduplication, off-corridor venue geofencing (`is_off_corridor_venue()`), and micro-venue / administrative ticket booth suppression (`is_micro_venue_or_administrative()`). |
+| `fb_scraper.py` | Apify cloud scraping engine: loads posts, captions, permalinks, post timestamps, and triggers Gemini OCR text extraction. |
+| `auth.py` | Legacy authentication module (retained during transitional cleanup; superseded by Apify API token). |
 | `keywords.py` | Pre-filter: classifies post text as `academic`, `lgu`, or irrelevant using keyword groups aligned to the friction weight table. Uses `.casefold()` for case-insensitive matching. Equipped with dedicated recognition for UST's *"Enriched Virtual Mode of Instruction"* (EVM), Thomasian demographic context tokens, institutional source-type inheritance, and negative keyword exclusion guards for post-flood medical/health notices (Leptospirosis, Doxycycline) and relief goods distribution to prevent false weather disruption triggers. |
-| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification with injected current reference date/year to prevent misdating. Returns `category`, `event_name`, `event_date`, `event_code`, `is_cancellation`, and `cancellation_target_code` via Pydantic schema. Strictly enforces `is_cancellation = false` for newly declared suspensions, routes number coding to `CIVIC_MAINTENANCE`, isolates health/relief notices, maps youth/technology festivals to `MAJOR_ARENA_EVENT`, and enforces a strict date duration guardrail (Section 3b) prioritizing explicit disruption dates (e.g. September 21–22) over contextual colloquial phrases (e.g. *"modality swap for this week"*). |
-| `calendar_scraper.py` | Academic calendar release detector — finds calendar posts, extracts dates via Gemini, generates Excel files per school, emails them as attachments, and upserts events to Supabase. |
-| `email_notifier.py` | Email alert system — sends pipeline summary emails (new events found), cookie expiration alerts, and academic calendar attachments via Gmail SMTP. |
+| `llm_classifier.py` | LLM stage: sends pre-filtered post text to Gemini 2.0 Flash for structured classification with injected current reference date/year to prevent misdating. Returns `category`, `event_name`, `event_date`, `event_code`, `is_cancellation`, and `cancellation_target_code` via Pydantic schema. Strictly enforces `is_cancellation = false` for newly declared suspensions, routes number coding to `CIVIC_MAINTENANCE`, isolates health/relief notices, maps youth/technology festivals to `MAJOR_ARENA_EVENT`, and enforces a strict date duration guardrail (Section 3b) prioritizing explicit disruption dates (e.g. September 21-22) over contextual colloquial phrases (e.g. *"modality swap for this week"*). |
+| `calendar_scraper.py` | Academic calendar release detector: finds calendar posts, extracts dates via Gemini, generates Excel files per school, emails them as attachments, and upserts events to Supabase. |
+| `email_notifier.py` | Email alert system: sends pipeline summary emails (new events found) and academic calendar attachments via Gmail SMTP. |
 | `unicode_normalizer.py` | Converts decorative Unicode text (Mathematical Bold, Italic, Script, Double-Struck, Circled, Fullwidth) back to plain ASCII so keyword matching works regardless of Facebook font styling. |
-| `clean_and_renumber.py` | Database maintenance utility — deduplicates and re-numbers event IDs in `external.academic_lgu_events` across `acad`, `lgu` (including municipalities), and `pagasa`. |
-| `debug_facebook_page.py` | Diagnostic tool — opens a Facebook page in Playwright and checks for login walls, keyword matches, and cookie validity. |
+| `clean_and_renumber.py` | Database maintenance utility: deduplicates and re-numbers event IDs in `external.academic_lgu_events` across `acad`, `lgu` (including municipalities), and `pagasa`. |
 | `pages.json` | List of Facebook pages to scrape, with station mappings, batch assignments (A/B/C/D), scrape priorities, and optional `max_scrolls` overrides. |
-| `processed_calendars.json` | Deduplication tracker for the calendar scraper — stores URLs of already-processed calendar posts. |
+| `processed_calendars.json` | Deduplication tracker for the calendar scraper: stores URLs of already-processed calendar posts. |
 | `scheduler.py` | Local scheduler for high, medium, and low priority page scraping. |
-| `Dockerfile` | Container image based on Playwright Python. |
+| `Dockerfile` | Container image based on Python 3.12 for pipeline execution. |
 | `requirements.txt` | Python dependencies. |
 | `.env.example` | Template for local `.env` file with all required variables. |
-| `test_pipeline_logic.py` | Sandbox test — runs keyword and LLM classification against a simulated post. |
+| `test_pipeline_logic.py` | Sandbox test: runs keyword and LLM classification against a simulated post. |
 | `test_email.py` | Tests the email alert system by sending a sample notification. |
-| `test_mbasic.py` | Diagnostic — tests mbasic.facebook.com scraping with Playwright. |
 
 ## Two-Stage Classification Pipeline & Truncation Resilience
 
@@ -71,27 +68,27 @@ Facebook Post
      │
      ▼
 ┌──────────────────────────┐
-│ 1. Keyword Pre-Filter    │  keywords.py — fast, no API cost
+│ 1. Keyword Pre-Filter    │  keywords.py: fast, no API cost
 │    (casefold + Unicode   │  Rejects posts with zero keyword hits
 │     normalization)       │  Returns: academic | lgu | None
 └──────────┬───────────────┘
            │ (keyword hit)
            ▼
 ┌──────────────────────────┐
-│ 2. In-Place DOM Expansion│  fb_scraper.py — expands 'See More' / 'Tumingin pa' inline
-│    & Multi-Modal OCR     │  Zero-cost client-side DOM click (0 extra HTTP requests)
+│ 2. Un-Truncated Extraction│  fb_scraper.py: full caption extraction via Apify
+│    & Multi-Modal OCR     │  Apify residential actor (0 extra client-side requests)
 │                          │  Gemini Vision OCR extracts full memo text from infographics
 └──────────┬───────────────┘
            │
            ▼
 ┌──────────────────────────┐
-│ 3. Gemini LLM Extraction │  llm_classifier.py — structured output with prompt resilience
+│ 3. Gemini LLM Extraction │  llm_classifier.py: structured output with prompt resilience
 │    (Gemini 2.0 Flash)    │  Injects post title/source name context; extracts 5-8 word summary
 └──────────┬───────────────┘
            │
            ▼
 ┌──────────────────────────┐
-│ 4. Category Override     │  pipeline.py — page-type-aware
+│ 4. Category Override     │  pipeline.py: page-type-aware
 │    PAGASA page → pagasa  │  Preserves academic_calendar from LLM
 │    LGU/PIO page → lgu    │  Falls back to keyword category if LLM fails
 └──────────┬───────────────┘
@@ -122,28 +119,7 @@ Create a local `.env` in this folder when running locally (see `.env.example` fo
 ```env
 SUPABASE_URL=
 SUPABASE_KEY=
-FB_C_USER=
-FB_XS=
-```
-
-**Facebook cookies (optional but recommended):**
-
-```env
-FB_DATR=
-FB_FR=
-FB_SB=
-```
-
-`FB_C_USER` and `FB_XS` are the most important cookies. The other Facebook cookies improve session reliability when available.
-
-**Backup Facebook accounts** (up to 9 additional accounts for cookie rotation):
-
-```env
-FB_C_USER_1=
-FB_XS_1=
-FB_DATR_1=
-FB_FR_1=
-FB_SB_1=
+APIFY_API_TOKEN=
 ```
 
 **Gemini API keys** (supports comma-separated list and/or sequential variables):
@@ -167,13 +143,12 @@ SENDER_PASSWORD=your_gmail_app_password
 RECEIVER_EMAIL=recipient1@email.com,recipient2@email.com
 ```
 
-Never commit `.env` or cookie values.
+Never commit `.env` or API token values.
 
 ## Install
 
 ```bash
 pip install -r requirements.txt
-playwright install chromium
 ```
 
 ## Run the Events Pipeline
@@ -237,7 +212,7 @@ The scheduler runs an initial scrape immediately on startup.
 | Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:18 AM PHT (20:18 UTC) | `strong` | Full 24-hour sweep | ~150 | ~$0.75 |
 | Events Pipeline | `.github/workflows/events_pipeline.yml` | 11:23 AM PHT (03:23 UTC) | `medium` | Mid-day surge catcher (8h) | ~72 | ~$0.36 |
 | Events Pipeline | `.github/workflows/events_pipeline.yml` | 4:14 PM PHT (08:14 UTC) | `light` | Afternoon watchdog (4h) | ~36 | ~$0.18 |
-| Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | — | Academic calendar release detector | — | — |
+| Calendar Scraper | `.github/workflows/calendar_scraper.yml` | Every 5 days at 8:00 AM PHT | - | Academic calendar release detector | - | - |
 
 **Daily total:** ~258 posts → ~$1.29/day → ~$40/month (Apify Starter $29 + ~$11 overage).
 Apify billing model: **Pay per event at $0.005/result** (confirmed from dashboard).
@@ -262,12 +237,12 @@ For each relevant post, the pipeline generates a sequential ID and saves:
 
 The pipeline uses a **5-Layer bulletproof deduplication strategy**:
 
-1. **URL deduplication** — Skips posts whose `source_url` (cleaned of query tracking parameters) already exists in `external.academic_lgu_events`.
-2. **Normalized Text Prefix Similarity** — Strips common advisory prefixes (`"Advisory |"`, `"Edited Advisory |"`, `"Just In |"`, `"#WalangPasok"`, `"Panoorin |"`) and compares the first 100 characters of `post_text + image_text` against existing records. This catches identical notices reposted under different URL schemes (e.g. `/posts/` vs `/photo/`) or corrected replacement advisories (*"Edited Advisory: This advisory has been edited to correct an error..."*).
-3. **Semantic Event Key & Code Key Collision** — 
+1. **URL deduplication**: Skips posts whose `source_url` (cleaned of query tracking parameters) already exists in `external.academic_lgu_events`.
+2. **Normalized Text Prefix Similarity**: Strips common advisory prefixes (`"Advisory |"`, `"Edited Advisory |"`, `"Just In |"`, `"#WalangPasok"`, `"Panoorin |"`) and compares the first 100 characters of `post_text + image_text` against existing records. This catches identical notices reposted under different URL schemes (e.g. `/posts/` vs `/photo/`) or corrected replacement advisories (*"Edited Advisory: This advisory has been edited to correct an error..."*).
+3. **Semantic Event Key & Code Key Collision**: 
    - Tracks `(source_name, event_name, event_date)` tuples to prevent reminder posts from duplicating.
    - For major transit disruptions (`MAJOR_ARENA_EVENT`, `CLASS_SUSPENSION`, `ONLINE_CLASS_SHIFT`), tracks `(source_name, event_date, event_code)` collisions. This prevents multiple game recaps or sequential photo updates (e.g. UAAP exhibition matches from student publications) from inflating event counts and spiking the Academic Surge Weight ($A_{sw}$).
-4. **Retrospective Photo Recap & Street Festival Guardrail** (`MAJOR_ARENA_EVENT` only) — Detects posts published **after** an arena, sports event, or street festival has already concluded and blocks them from generating active disruption records in `events_consolidated`. A post is classified as retrospective if:
+4. **Retrospective Photo Recap & Street Festival Guardrail** (`MAJOR_ARENA_EVENT` only): Detects posts published **after** an arena, sports event, or street festival has already concluded and blocks them from generating active disruption records in `events_consolidated`. A post is classified as retrospective if:
    - The LLM-extracted `event_date` is on or before the Facebook post's publication date (`days_in_past >= 1`), **or**
    - The `event_date` is in the past **and** the post text matches Filipino/English celebratory recap phrases such as `"naging matagumpay"`, `"photo highlight"`, `"event recap"`, `"successfully held"`, `"naganap noong"`, `"playing it back"`, `"katatapos lang"`, `"came together for an opening"`, `"officially commenced"`, `"after the ... ceremony"`, `"idinaos na"`, `"napuno ng masasayang aktibidad"`, etc., **or**
    - The text reports sports game outcomes (`"victory over"`, `"defeated"`, `"won against"`, `"edged out"`, `"loss to"`, `"final score"`), **or**
@@ -275,7 +250,7 @@ The pipeline uses a **5-Layer bulletproof deduplication strategy**:
    - The post describes off-corridor micro-venues or neighborhood street festivals (`banawe`, `chinatown`, `mooncake fest`).
    
    This guardrail executes synchronously in `pipeline.py` and is mirrored in the `external.sync_academic_lgu_to_events_consolidated` database trigger as a secondary defense for any records that may have been inserted before the pipeline filter was active (`purge_cleanup_mooncake_and_cluster_duplicate_anomalies.sql`).
-5. **Institutional Cluster Deduplication (Start-Date Normalized)** — When two Facebook pages from the **same institution** (e.g. *Far Eastern University Manila* and *FEU Central Student Organization*) both post the same `CLASS_SUSPENSION`, `ONLINE_CLASS_SHIFT`, or `TRANSPORT_STRIKE` code, deduplication matches against both exact dates and normalized start dates. Only the **first** announcement encountered (usually the official university administration notice) is ingested. Subsequent announcements from student councils or satellite pages are silently skipped, preventing duplicate or inflated multi-day shock series. Cluster keys are maintained for all major LRT-2 corridor universities (FEU, UST, UE, UP Diliman, San Beda, Ateneo, TIP, Stella Maris, SPUQC, WCC, UERM, PUP, OLFU) and enforced both in `pipeline.py` and at the database trigger level in `external.sync_academic_lgu_to_events_consolidated()`.
+5. **Institutional Cluster Deduplication (Start-Date Normalized)**: When two Facebook pages from the **same institution** (e.g. *Far Eastern University Manila* and *FEU Central Student Organization*) both post the same `CLASS_SUSPENSION`, `ONLINE_CLASS_SHIFT`, or `TRANSPORT_STRIKE` code, deduplication matches against both exact dates and normalized start dates. Only the **first** announcement encountered (usually the official university administration notice) is ingested. Subsequent announcements from student councils or satellite pages are silently skipped, preventing duplicate or inflated multi-day shock series. Cluster keys are maintained for all major LRT-2 corridor universities (FEU, UST, UE, UP Diliman, San Beda, Ateneo, TIP, Stella Maris, SPUQC, WCC, UERM, PUP, OLFU) and enforced both in `pipeline.py` and at the database trigger level in `external.sync_academic_lgu_to_events_consolidated()`.
 
 ## Source URL Safety
 
@@ -320,44 +295,43 @@ Each of the 29 LRT-2 sources in `pages.json` is strictly classified by `source_t
 
 ## Special Filters
 
-- **OLFU Antipolo Branch Filter** — Our Lady of Fatima University posts from a nationwide page covering all Philippine branches (`Valenzuela`, `Metro Manila`, `Quezon City`, `Antipolo`, `Nueva Ecija`, `Laguna`, `Pampanga`). The pipeline strictly isolates the **Antipolo** branch:
+- **OLFU Antipolo Branch Filter**: Our Lady of Fatima University posts from a nationwide page covering all Philippine branches (`Valenzuela`, `Metro Manila`, `Quezon City`, `Antipolo`, `Nueva Ecija`, `Laguna`, `Pampanga`). The pipeline strictly isolates the **Antipolo** branch:
   1. If a post explicitly mentions `"antipolo"` (including multi-branch announcements listing Antipolo alongside other branches), it is **accepted**.
   2. If a post is verified systemwide (`"all campuses"`, `"all olfu campuses"`, `"systemwide"`, `"entire university"`), the pipeline parses exception clauses (`except/excluding/maliban sa [branch]`). If another branch is excepted (e.g. `All OLFU Campuses (except OLFU Quezon City)`), Antipolo is **accepted**. If Antipolo itself is excepted, it is **rejected**.
-- **UE Multi-Campus Disambiguation & Caloocan Corridor Guardrail (`is_ue_manila_post()`)** — University of the East's main Facebook page (`UniversityoftheEastUE`) publishes announcements for both the **Manila Campus** (LRT-2 Recto station) and **Caloocan Campus** (Samson Road, Caloocan City — outside the LRT-2 corridor):
+- **UE Multi-Campus Disambiguation & Caloocan Corridor Guardrail (`is_ue_manila_post()`)**: University of the East's main Facebook page (`UniversityoftheEastUE`) publishes announcements for both the **Manila Campus** (LRT-2 Recto station) and **Caloocan Campus** (Samson Road, Caloocan City, outside the LRT-2 corridor):
   1. If a post explicitly targets UE Caloocan only (e.g. *"UE Caloocan Sonyverse Concert"*, local campus suspensions, orientations at Caloocan Open Field) without mentioning Manila or systemwide, it is **skipped** at the pre-filter level to prevent out-of-corridor events from being registered at LRT-2 Recto station or misattributed to "University of the East Manila".
   2. If a post targets UE Manila or is verified systemwide (`"all campuses"`, `"both campuses"`, `"manila and caloocan"`, `"ue community"`), it is **accepted** and assigned to Recto station.
-- **Academic Calendar Release Hardening (`calendar_scraper.py`)** — The academic calendar scraper evaluates strict negative keywords (`petition`, `resubmitted petition`, `advocacy`, `shift to evm`, `enhanced virtual mode`, `position paper`, `appeal`, `resolution`, `statement on`, `transport strike`) and requires primary calendar identifiers to appear in headlines or structured document attachments, preventing student council petitions from being misidentified as academic calendar releases.
-- **Numeric Sequence ID Isolation** — Auto-increment ID generation in `pipeline.py` and `calendar_scraper.py` parses IDs with regular expressions (`rf"^{re.escape(base)}_(\d+)$"`) and integer maximum comparison, guaranteeing that calendar release IDs (`external_acad_cal_`) never cause lexicographical sorting collisions with regular academic sequence IDs (`external_acad_`).
-- **Anti-Detection Pacing & Startup Jitter** — To prevent Facebook account checkpoints and bot flagging from cloud data center IPs:
-  1. **Startup Jitter**: Westbound runners wait 20–35 seconds before launching so concurrent matrix jobs never hit Facebook at the exact same millisecond.
-  2. **Inter-Page Pacing**: The pipeline enforces a randomized 12–22 second cooldown between consecutive page scrapes.
-  3. **User-Agent Pool**: Playwright randomly rotates among modern Windows and macOS desktop User-Agent strings (`Chrome 131`, `Chrome 130`, `Edge 129`).
-- **Cancellation & Rescheduling Synchronization (`tg_sync_academic_lgu_events`)** — When an advisory is flagged with `is_cancellation = true`, the database consolidation layer deactivates the original active record on the announcement date in `academic_lgu_events` (`is_cancelled = true`) and removes it from `events_consolidated`. If the announcement is rescheduling a major sports/arena event (e.g. UAAP kickoff rallies, celebrity matches) to a future date, the classifier honors `event_code = MAJOR_ARENA_EVENT` and schedules the rescheduled event on the new target date (`event_date`) as `major_event` (friction weight `0.65`). Secondary clauses (such as *"rescheduled due to class suspensions"*) are evaluated after the reschedule check, preventing sports reschedulings from falsely hijacking the feed as Critical (`1.0`) class suspensions. For official resumptions of classes/work (`event_code = 'RESUMPTION_CLASSES'`), the trigger strictly exits without inserting active suspension records, preventing advance notices (where `event_date > post_date`) from being inverted into active class suspensions.
-- **Off-Corridor Mega-Venue Geofencing (`is_off_corridor_venue()`)** — Evaluates event venue locations. Events held at sports and entertainment venues outside the LRT-2 transit walkshed (SM Mall of Asia Arena Pasay, PICC Plenary Hall Pasay, San Andres Sports Complex Malate, Rizal Memorial Stadium Pasay/Manila, Ninoy Aquino Stadium, Philsports Arena/Ultra Pasig, Cuneta Astrodome, Filoil EcoOil Centre San Juan, Strike Gymnasium Bacoor Cavite, or provincial venues across Cavite, Laguna, Bulacan, Pampanga, and far off-corridor barangays like Payatas)) are skipped at the pre-filter level in `pipeline.py` and blocked by `external.sync_academic_lgu_to_events_consolidated()` in PostgreSQL (`has_off_corridor_arena`).
-- **Micro-Venue & Administrative Deadlines Suppression (`is_micro_venue_or_administrative()`)** — Blocks minor campus facility events (ticket selling booths, dance studios, student covered courts, small gymnasiums), hyper-local street food markets and bazaars (`pop-up`, `market expo`, `bazaar`, `tiangge`, `night market`, `street food`, `youth market`), guided river ferry tours, and administrative form deadlines (admissions, clearance, graduation form submissions) from triggering `MAJOR_ARENA_EVENT` (weight 0.65).
-- **Emergency IMT Demobilization Isolation** — Post-flood advisories announcing the demobilization of LGU Incident Management Teams (e.g. Pasig PIO IMT demobilization) are isolated from `Civic Rally & Public Mobilization`, preventing false crowd mobilization alarms.
-- **Satellite Campus Local Holiday Geofencing** — Academic calendar notices declaring local LGU holidays for satellite branches situated entirely outside the LRT-2 corridor (e.g. *Makati Day (Makati Holiday)* for FEU Makati) are quarantined and excluded from triggering academic disruption shocks across LRT-2 stations.
-- **Annual Holiday Proclamation Guardrail** — Nationwide holiday lists published months in advance for an upcoming calendar year (e.g. Malacañang 2027 Holiday Schedule) are classified as non-disruptive reference notices (`CIVIC_MAINTENANCE` / non-disruptive), preventing them from being scheduled as pseudo class suspensions on January 1.
-- **Statutory Non-Working Day & Proclamation Recognition** — Pre-filtering and ingestion pipelines recognize statutory Philippine holiday phrasings (*"special non-working days"*, *"special non-working day"*, *"special working days"*, *"proclamation no."*, and high-profile summit declarations such as *"ASEAN Summit"*), ensuring official Malacañang declarations reported by university student publications (e.g. *The Varsitarian*) or LGUs pass the keyword filter gate without requiring explicit `"holiday"` or `"walang pasok"` wording.
-- **GitHub Actions Free Quota Optimization** — Redundant half-hourly watchdog polling is disabled; primary weather pipelines run with built-in 5x retries, keeping overall monorepo consumption at ~750 minutes/month (well within the 2,000 min/mo private repository quota).
-- **Retrospective Photo Recap Guardrail** — See [Deduplication Layer 4](#deduplication) above. Applied in `pipeline.py` at post-classification time (before database write) and mirrored in the `external.sync_academic_lgu_to_events_consolidated` database trigger as a secondary defense.
-- **Institutional Cluster Deduplication** — See [Deduplication Layer 5](#deduplication) above. Prevents student council or affiliate pages from doubling the disruption weight of an event already reported by the institution's official administration page.
-- **Motorist Traffic Advisory vs Holiday Guardrail** — Traffic management advisories issued for road motor vehicles (e.g. *"Abiso sa mga motorista"*, *"alternatibong ruta"*, *"pagbagal ng daloy ng trapiko"*) around highway landmarks (e.g. EDSA People Power Monument) are classified as non-disruptive `CIVIC_MAINTENANCE` (`affects_ridership = FALSE`) and prohibited from triggering statutory holiday or class suspension shocks.
+- **Academic Calendar Release Hardening (`calendar_scraper.py`)**: The academic calendar scraper evaluates strict negative keywords (`petition`, `resubmitted petition`, `advocacy`, `shift to evm`, `enhanced virtual mode`, `position paper`, `appeal`, `resolution`, `statement on`, `transport strike`) and requires primary calendar identifiers to appear in headlines or structured document attachments, preventing student council petitions from being misidentified as academic calendar releases.
+- **Numeric Sequence ID Isolation**: Auto-increment ID generation in `pipeline.py` and `calendar_scraper.py` parses IDs with regular expressions (`rf"^{re.escape(base)}_(\d+)$"`) and integer maximum comparison, guaranteeing that calendar release IDs (`external_acad_cal_`) never cause lexicographical sorting collisions with regular academic sequence IDs (`external_acad_`).
+- **Anti-Detection Pacing & Startup Jitter**: To prevent account checkpoints and bot flagging from cloud data center IPs:
+  1. **Startup Jitter**: Westbound runners wait 20-35 seconds before launching so concurrent matrix jobs never hit Facebook at the exact same millisecond.
+  2. **Inter-Page Pacing**: The pipeline enforces a randomized 12-22 second cooldown between consecutive page scrapes.
+  3. **Residential Proxy & IP Rotation**: Handled automatically via Apify cloud infrastructure and rotating egress proxies.
+- **Cancellation & Rescheduling Synchronization (`tg_sync_academic_lgu_events`)**: When an advisory is flagged with `is_cancellation = true`, the database consolidation layer deactivates the original active record on the announcement date in `academic_lgu_events` (`is_cancelled = true`) and removes it from `events_consolidated`. If the announcement is rescheduling a major sports/arena event (e.g. UAAP kickoff rallies, celebrity matches) to a future date, the classifier honors `event_code = MAJOR_ARENA_EVENT` and schedules the rescheduled event on the new target date (`event_date`) as `major_event` (friction weight `0.65`). Secondary clauses (such as *"rescheduled due to class suspensions"*) are evaluated after the reschedule check, preventing sports reschedulings from falsely hijacking the feed as Critical (`1.0`) class suspensions. For official resumptions of classes/work (`event_code = 'RESUMPTION_CLASSES'`), the trigger strictly exits without inserting active suspension records, preventing advance notices (where `event_date > post_date`) from being inverted into active class suspensions.
+- **Off-Corridor Mega-Venue Geofencing (`is_off_corridor_venue()`)**: Evaluates event venue locations. Events held at sports and entertainment venues outside the LRT-2 transit walkshed (SM Mall of Asia Arena Pasay, PICC Plenary Hall Pasay, San Andres Sports Complex Malate, Rizal Memorial Stadium Pasay/Manila, Ninoy Aquino Stadium, Philsports Arena/Ultra Pasig, Cuneta Astrodome, Filoil EcoOil Centre San Juan, Strike Gymnasium Bacoor Cavite, or provincial venues across Cavite, Laguna, Bulacan, Pampanga, and far off-corridor barangays like Payatas)) are skipped at the pre-filter level in `pipeline.py` and blocked by `external.sync_academic_lgu_to_events_consolidated()` in PostgreSQL (`has_off_corridor_arena`).
+- **Micro-Venue & Administrative Deadlines Suppression (`is_micro_venue_or_administrative()`)**: Blocks minor campus facility events (ticket selling booths, dance studios, student covered courts, small gymnasiums), hyper-local street food markets and bazaars (`pop-up`, `market expo`, `bazaar`, `tiangge`, `night market`, `street food`, `youth market`), guided river ferry tours, and administrative form deadlines (admissions, clearance, graduation form submissions) from triggering `MAJOR_ARENA_EVENT` (weight 0.65).
+- **Emergency IMT Demobilization Isolation**: Post-flood advisories announcing the demobilization of LGU Incident Management Teams (e.g. Pasig PIO IMT demobilization) are isolated from `Civic Rally & Public Mobilization`, preventing false crowd mobilization alarms.
+- **Satellite Campus Local Holiday Geofencing**: Academic calendar notices declaring local LGU holidays for satellite branches situated entirely outside the LRT-2 corridor (e.g. *Makati Day (Makati Holiday)* for FEU Makati) are quarantined and excluded from triggering academic disruption shocks across LRT-2 stations.
+- **Annual Holiday Proclamation Guardrail**: Nationwide holiday lists published months in advance for an upcoming calendar year (e.g. Malacañang 2027 Holiday Schedule) are classified as non-disruptive reference notices (`CIVIC_MAINTENANCE` / non-disruptive), preventing them from being scheduled as pseudo class suspensions on January 1.
+- **Statutory Non-Working Day & Proclamation Recognition**: Pre-filtering and ingestion pipelines recognize statutory Philippine holiday phrasings (*"special non-working days"*, *"special non-working day"*, *"special working days"*, *"proclamation no."*, and high-profile summit declarations such as *"ASEAN Summit"*), ensuring official Malacañang declarations reported by university student publications (e.g. *The Varsitarian*) or LGUs pass the keyword filter gate without requiring explicit `"holiday"` or `"walang pasok"` wording.
+- **GitHub Actions Free Quota Optimization**: Redundant half-hourly watchdog polling is disabled; primary weather pipelines run with built-in 5x retries, keeping overall monorepo consumption at ~750 minutes/month (well within the 2,000 min/mo private repository quota).
+- **Retrospective Photo Recap Guardrail**: See [Deduplication Layer 4](#deduplication) above. Applied in `pipeline.py` at post-classification time (before database write) and mirrored in the `external.sync_academic_lgu_to_events_consolidated` database trigger as a secondary defense.
+- **Institutional Cluster Deduplication**: See [Deduplication Layer 5](#deduplication) above. Prevents student council or affiliate pages from doubling the disruption weight of an event already reported by the institution's official administration page.
+- **Motorist Traffic Advisory vs Holiday Guardrail**: Traffic management advisories issued for road motor vehicles (e.g. *"Abiso sa mga motorista"*, *"alternatibong ruta"*, *"pagbagal ng daloy ng trapiko"*) around highway landmarks (e.g. EDSA People Power Monument) are classified as non-disruptive `CIVIC_MAINTENANCE` (`affects_ridership = FALSE`) and prohibited from triggering statutory holiday or class suspension shocks.
 
 ## Email Alerts
 
-The pipeline sends three types of email alerts:
+The pipeline sends two types of email alerts:
 
-1. **Pipeline summary** — sent after each run with a table of all newly saved events.
-2. **Cookie expiration alert** — sent when one or more Facebook accounts hit a login wall.
-3. **Calendar attachment** — sent when the calendar scraper finds a new academic calendar release, with the generated `.xlsx` file attached.
+1. **Pipeline summary**: sent after each run with a table of all newly saved events.
+2. **Calendar attachment**: sent when the calendar scraper finds a new academic calendar release, with the generated `.xlsx` file attached.
 
 ## Maintenance Notes
 
 - Update `pages.json` when adding or removing source pages. Assign a batch letter (A/B/C/D).
 - Update `keywords.py` when classification rules change (keyword groups are aligned to `external.friction_weight`).
 - Update the LLM prompt in `llm_classifier.py` if new event types need to be recognized.
-- Facebook markup can change, so scraper selectors in `fb_scraper.py` may need maintenance.
-- Gemini API keys have daily free-tier quotas — rotate or add keys if quota errors increase.
+- Monitor Apify dataset outputs and actor run statuses to ensure upstream source schemas remain consistent.
+- Gemini API keys have daily free-tier quotas: rotate or add keys if quota errors increase.
 - OCR quality depends on image clarity and Gemini's ability to read the image.
 - Monitor `processed_calendars.json` to verify calendar deduplication is working correctly.

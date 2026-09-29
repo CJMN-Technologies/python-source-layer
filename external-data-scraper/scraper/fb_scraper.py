@@ -1,5 +1,4 @@
 from apify_client import ApifyClient
-from bs4 import BeautifulSoup
 from google import genai
 import os
 from PIL import Image
@@ -473,9 +472,6 @@ def candidate_page_urls(page_url: str) -> list[str]:
 
 def click_see_more_buttons(page, max_clicks: int = 8):
     pass
-
-def normalize_playwright_cookies(cookies: list) -> list:
-    return []
 
 def get_ancestor(el, levels: int):
     return getattr(el, "parent", None)

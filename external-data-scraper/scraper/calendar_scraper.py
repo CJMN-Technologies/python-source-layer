@@ -1,5 +1,5 @@
 """
-calendar_scraper.py — Academic Calendar Release Scraper
+calendar_scraper.py: Academic Calendar Release Scraper
 
 Scrapes Facebook pages of universities near LRT-2 stations for official
 Academic Calendar releases (A.Y. 2026-2027).
@@ -30,7 +30,6 @@ import re
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from bs4 import BeautifulSoup
 from apify_client import ApifyClient
 import pandas as pd
 

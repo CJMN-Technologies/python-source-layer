@@ -22,7 +22,7 @@ The pipeline is update-only. It does not insert new station or forecast rows. Re
 | Open-Meteo | Weather source for current conditions and daily forecasts |
 | Supabase Python client | Updates weather rows through Supabase |
 | python-dotenv | Loads local `.env` values |
-| APScheduler | Optional local hourly scheduler (not included in `requirements.txt` — install separately if needed) |
+| APScheduler | Optional local hourly scheduler (not included in `requirements.txt`, install separately if needed) |
 
 ## Files
 
@@ -32,7 +32,7 @@ The pipeline is update-only. It does not insert new station or forecast rows. Re
 | `weather_fetch.py` | Calls Open-Meteo and normalizes API output into station-level weather records. |
 | `rainfall_classifier.py` | Converts raw rainfall values (mm) into human-readable rainfall levels. |
 | `stations.json` | LRT-2 station names, station codes, latitude, and longitude for all 13 stations. |
-| `scheduler.py` | Local hourly scheduler — runs both observations and forecasts every hour at minute `0`. |
+| `scheduler.py` | Local hourly scheduler: runs both observations and forecasts every hour at minute `0`. |
 | `requirements.txt` | Python dependencies (`requests`, `supabase`, `python-dotenv`). |
 | `test_weather.py` | Simple manual API test script for verifying Open-Meteo connectivity. |
 | `.env.example` | Template for local `.env` file. |

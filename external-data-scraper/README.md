@@ -24,9 +24,9 @@ external-data-scraper/
 
 | Folder or Script | Purpose | Target Table | Trigger |
 | --- | --- | --- | --- |
-| `scraper/` (events pipeline) | Scrapes selected Facebook pages for academic and LGU disruptions using a two-stage keyword + Gemini LLM classifier. | `external.academic_lgu_events` | GitHub Actions (`events_pipeline.yml`) — 2× daily |
-| `scraper/` (calendar scraper) | Detects academic calendar releases on Facebook, extracts dates via Gemini OCR, generates `.xlsx` files, and emails them to the team. | `external.academic_lgu_events` | GitHub Actions (`calendar_scraper.yml`) — every 5 days |
-| `weather/` | Fetches current weather and 7-day forecasts for LRT-2 stations from Open-Meteo. | `external.weather_current`, `external.weather_forecasts` | GitHub Actions (`weather_pipeline.yml`) — daily |
+| `scraper/` (events pipeline) | Scrapes selected Facebook pages for academic and LGU disruptions using a two-stage keyword + Gemini LLM classifier. | `external.academic_lgu_events` | GitHub Actions (`events_pipeline.yml`): 3x daily |
+| `scraper/` (calendar scraper) | Detects academic calendar releases on Facebook, extracts dates via Gemini OCR, generates `.xlsx` files, and emails them to the team. | `external.academic_lgu_events` | GitHub Actions (`calendar_scraper.yml`): every 5 days |
+| `weather/` | Fetches current weather and 7-day forecasts for LRT-2 stations from Open-Meteo. | `external.weather_current`, `external.weather_forecasts` | GitHub Actions (`weather_pipeline.yml`): hourly |
 | `ingest_apta_protocols.py` | Loads `APTA_Protocols.xlsx` into Supabase. | `APTA.apta_protocols` | Manual |
 | `ingest_external_friction_index.py` | Loads friction index Excel sources into Supabase. | `external.friction_index` | Manual |
 
@@ -38,7 +38,7 @@ external-data-scraper/
 | API/database client | Supabase Python client for scraper and weather |
 | Direct database loading | psycopg2 with SSL verification |
 | Data processing | pandas, openpyxl |
-| Web scraping | Playwright (headless Chromium), BeautifulSoup, Requests |
+| Web scraping | Apify Cloud Client (`apify-client`), Requests |
 | OCR & image text extraction | Google Gemini 2.0 Flash (`google-genai`) with Pillow and NumPy |
 | LLM classification | Google Gemini 2.0 Flash with Pydantic structured output |
 | Unicode normalization | Custom module for decorative Facebook text |
@@ -55,17 +55,13 @@ SUPABASE_URL=
 SUPABASE_KEY=
 ```
 
-For `scraper/` only (Facebook cookies):
+For `scraper/` only (Apify residential scraping):
 
 ```env
-FB_C_USER=
-FB_XS=
-FB_DATR=
-FB_FR=
-FB_SB=
+APIFY_API_TOKEN=
 ```
 
-For `scraper/` only (Gemini API — supports comma-separated keys or sequential variables):
+For `scraper/` only (Gemini API: supports comma-separated keys or sequential variables):
 
 ```env
 GEMINI_API_KEY=your_key_1,your_key_2
@@ -132,6 +128,6 @@ data/read_data/External/
 - The Facebook scraper and weather updater use Supabase REST credentials (`SUPABASE_URL` / `SUPABASE_KEY`).
 - The workbook ingestion scripts use a direct PostgreSQL `DATABASE_URL` with SSL certificate verification.
 - The scraper uses Gemini 2.0 Flash for both OCR (image text extraction) and LLM classification (event categorization).
-- Email alerts are sent via Gmail SMTP when new events are found or when Facebook cookies expire.
+- Email alerts are sent via Gmail SMTP when new events are found.
 - Source workbooks, `.env`, certificates, and generated files are ignored by Git.
 - Read `scraper/README.md` and `weather/README.md` before changing those pipelines.
