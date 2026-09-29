@@ -1,15 +1,18 @@
 name: Weather Watchdog Backup Pipeline
 # ---------------------------------------------------------------------------
-# Note: Scheduled cron disabled to conserve GitHub Actions free tier quota.
-# Primary weather_pipeline.yml runs hourly with built-in 5x retries & fallbacks.
-# This backup watchdog can still be manually triggered via workflow_dispatch.
+# Scheduling migrated to cron-job.org for exact-second precision.
+# GitHub Actions cron was consistently late by several minutes.
+#
+# cron-job.org job "LRT Weather Watchdog" triggers workflow_dispatch via
+# GitHub API at :30 mark hourly from 5:00 AM to 10:00 PM PHT
+# (crontab: 30 5-22 * * *).
+#
+# This backup watchdog checks for stale weather data and re-fetches if needed.
+# Can also be manually triggered via workflow_dispatch.
 # ---------------------------------------------------------------------------
 
 on:
-  schedule:
-    # Runs at the :30 minute mark between top-of-the-hour runs during operating hours
-    - cron: '30 21-23,0-14 * * *'
-  workflow_dispatch: # Allows manual trigger from the GitHub UI
+  workflow_dispatch: # Triggered by cron-job.org or manually from GitHub UI
 
 jobs:
   watchdog-weather:

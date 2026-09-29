@@ -1,10 +1,15 @@
 name: Weather Pipeline
 
+# ---------------------------------------------------------------------------
+# Scheduling migrated to cron-job.org for exact-second precision.
+# GitHub Actions cron was consistently late by several minutes.
+#
+# cron-job.org job "LRT Weather Pipeline" triggers workflow_dispatch via
+# GitHub API every hour from 5:00 AM to 10:00 PM PHT (crontab: 0 5-22 * * *).
+# ---------------------------------------------------------------------------
+
 on:
-  schedule:
-    # Runs hourly during LRT-2 operating hours: 5:00 AM to 10:00 PM PHT (21:00-14:00 UTC)
-    - cron: '0 21-23,0-14 * * *'
-  workflow_dispatch: # Allows manual trigger from the GitHub UI
+  workflow_dispatch: # Triggered by cron-job.org or manually from GitHub UI
 
 jobs:
   scrape-weather:
