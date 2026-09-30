@@ -42,11 +42,23 @@ CLASS_SUSPENSION_KEYWORDS = [
     "no classes and office work",
     # English — modality shifts
     "asynchronous classes",
+    "asynchronous modality",
+    "asynchronous learning",
+    "shift to asynchronous",
     "shift to online classes",
+    "shift to online",
+    "shift to remote",
     "online classes",
+    "online modality",
+    "online learning",
+    "remote classes",
+    "remote learning",
+    "virtual classes",
+    "virtual learning",
     "flexible learning",
     "distance learning",
     "modular classes",
+    "modular learning",
     "blended learning",
     "enriched virtual mode of instruction",
     "enriched virtual mode",
@@ -302,6 +314,70 @@ COMMUNITY_RELIEF_EXCLUSION_KEYWORDS = [
 ]
 
 # ---------------------------------------------------------------------------
+# GROUP 5C — NON-DISRUPTIVE MUNICIPAL MAINTENANCE & SOCIAL SERVICE EXCLUSIONS
+# Routine local city upkeep posts that have zero transit disruption
+# ---------------------------------------------------------------------------
+MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS = [
+    # Drainage, canals, & declogging
+    "declogging",
+    "declogging operation",
+    "declogging of drainage",
+    "drainage declogging",
+    "drain repair",
+    "ditch cleaning",
+    "cleaning of drainage",
+    "estero clean-up",
+    "estero rangers",
+    "linis estero",
+    "canal cleaning",
+    "desilting",
+    # Road resurfacing & localized work
+    "asphalting",
+    "asphalt scraping",
+    "asphalt overlay",
+    "pothole repair",
+    "gutter repair",
+    "sidewalk repair",
+    "pedestrian lane painting",
+    "curb painting",
+    "reblocking",
+    "road reblocking",
+    # Groundskeeping & sanitation
+    "grass cutting",
+    "cutting of grass",
+    "clearing of grass",
+    "tree trimming",
+    "pruning of trees",
+    "flushing operation",
+    "household garbage collection",
+    "waste collection schedule",
+    # Civic social services & profiling
+    "tupad profiling",
+    "tupad payout",
+    "tupad orientation",
+    "tupad",
+    "4ps payout",
+    "4ps profiling",
+    "birth registration caravan",
+    "late registration of birth",
+    "civil registry caravan",
+    "national id registration",
+    "philsys registration",
+    "voter registration caravan",
+    "pwd profiling",
+    "senior citizen booklet",
+    "anti-rabies",
+    "pet vaccination",
+    # Utilities
+    "water service interruption",
+    "water interruption advisory",
+    "maynilad water advisory",
+    "manila water advisory",
+    "power interruption advisory",
+    "meralco maintenance",
+]
+
+# ---------------------------------------------------------------------------
 # GROUP 6 — ACADEMIC CALENDAR EVENTS (friction: low, but high volume)
 # Includes: exams, enrollment, graduation — affects ridership patterns
 # ---------------------------------------------------------------------------
@@ -514,18 +590,20 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
         or any(kw.casefold() in lowered for kw in ACADEMIC_CONTEXT_KEYWORDS)
     )
 
-    # Health / Medical Prophylaxis and Community Relief Distribution Exclusions
-    # If a post is strictly health advice (Leptospirosis/Doxycycline) or post-flood food relief distribution
+    # Health, Relief, and Municipal Maintenance Exclusions
+    # If a post is strictly health advice (Leptospirosis/Doxycycline), relief goods distribution,
+    # or routine municipal upkeep (declogging, grass cutting, asphalting, profiling),
     # and does NOT contain active suspension, strike, or arena keywords, reject early.
     has_health_exclusion = any(kw.casefold() in lowered for kw in HEALTH_MEDICAL_EXCLUSION_KEYWORDS)
     has_relief_exclusion = any(kw.casefold() in lowered for kw in COMMUNITY_RELIEF_EXCLUSION_KEYWORDS)
+    has_maintenance_exclusion = any(kw.casefold() in lowered for kw in MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS)
     has_hard_disruption = (
         any(kw.casefold() in lowered for kw in CLASS_SUSPENSION_KEYWORDS)
         or any(kw.casefold() in lowered for kw in TRANSPORT_DISRUPTION_KEYWORDS)
         or any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
     )
 
-    if (has_health_exclusion or has_relief_exclusion) and not has_hard_disruption:
+    if (has_health_exclusion or has_relief_exclusion or has_maintenance_exclusion) and not has_hard_disruption:
         return None
 
     # Traffic / Number coding / Caravan advisories always route to LGU

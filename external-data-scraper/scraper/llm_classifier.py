@@ -141,6 +141,22 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - Competitions, sports matches, drumline battles, or festivals held in venues far outside Metro Manila or outside the LRT-2 transit walkshed (e.g. Strike Gymnasium in Bacoor Cavite, Laguna, Batangas, Bulacan, Pampanga) do not affect LRT-2 ridership. Output category = null.
    - Congratulatory and retrospective award recaps celebrating past wins or competition results (e.g. "Congratulations to...", "Bagged the championship", "Musiko drumline battle champion", "Won first place at...") posted after an event took place are retrospective celebrations, NOT forward-looking transit disruption notices. Output category = null.
 
+16. ADVANCE ACADEMIC BREAK NOTICES (>14 DAYS ADVANCE) vs IMMEDIATE SHOCKS:
+   - Announcements of upcoming holiday breaks, sem breaks, Undas breaks, Christmas breaks, Holy Week, or term breaks occurring weeks in the future across ANY school or LGU:
+   - Do NOT classify as CLASS_SUSPENSION. Output category = "academic_calendar" or category = null so it does not trigger premature daily operational transit shocks weeks in advance.
+
+17. GOVERNMENT & CIVIL SERVICE EMPLOYEE WORK SUSPENSIONS vs COMMUTER CLASS SUSPENSIONS:
+   - Declarations of half-day or holiday work suspensions applicable solely to city hall, municipal departments, courts/judiciary, or national civil service agencies (e.g. Civil Service Family Week, city hall skeleton workforce, government work-from-home orders) where schools and colleges remain in normal session must NEVER be classified as CLASS_SUSPENSION! Output category = "lgu", event_code = "CIVIC_MAINTENANCE", or category = null.
+
+18. ROUTINE MUNICIPAL MAINTENANCE, SOCIAL PROFILING & CARAVANS (STRICT NEGATIVE RULE):
+   - Routine LGU posts regarding drainage declogging, canal dredging/desilting, ditch cleaning, grass cutting, tree trimming, asphalting/pothole repairs, TUPAD/4Ps profiling/payouts, civil registry/birth registration caravans, voter registration caravans, senior/PWD profiling, pet anti-rabies vaccination, or scheduled water/power interruptions do NOT impact LRT-2 rail operations. Output category = null.
+
+19. ONLINE / ASYNCHRONOUS MODALITY SHIFT PRECEDENCE:
+   - Whenever an educational institution announces a transition to online, asynchronous, remote, EVM, virtual, modular, or flexible learning in response to ANY external event (transport strikes, extreme heat index, volcanic vog/smog, localized rainfall, utility outages, or political rallies), ALWAYS classify with event_code = "ONLINE_CLASS_SHIFT" under category = "academic", NOT TRANSPORT_STRIKE or WEATHER_ADVISORY. Student commuter demand is governed by physical classroom closure.
+
+20. CORRIDOR SPORTS ARENA VENUE ROUTING:
+   - When an athletic match or arena event (UAAP, NCAA, PBA, PVL, D-League, inter-collegiate) mentions a specific stadium along the corridor (e.g. Playtime Filoil EcoOil Centre / San Juan Arena, Smart Araneta Coliseum, Marikina Sports Center, Blue Eagle Gym / Loyola Gym / UP Gym, UST Quadricentennial Pavilion, Rizal Memorial), classify with event_code = "MAJOR_ARENA_EVENT" under category = "academic" or "lgu" so downstream routing maps to that stadium's LRT-2 station rather than the posting school's home campus.
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 
