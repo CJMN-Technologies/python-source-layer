@@ -157,6 +157,16 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
 20. CORRIDOR SPORTS ARENA VENUE ROUTING:
    - When an athletic match or arena event (UAAP, NCAA, PBA, PVL, D-League, inter-collegiate) mentions a specific stadium along the corridor (e.g. Playtime Filoil EcoOil Centre / San Juan Arena, Smart Araneta Coliseum, Marikina Sports Center, Blue Eagle Gym / Loyola Gym / UP Gym, UST Quadricentennial Pavilion, Rizal Memorial), classify with event_code = "MAJOR_ARENA_EVENT" under category = "academic" or "lgu" so downstream routing maps to that stadium's LRT-2 station rather than the posting school's home campus.
 
+21. STUDENT COUNCIL PROTEST ACTIONS & SOLIDARITY CALLS vs TRANSPORT STRIKES:
+   - Posts from student councils (e.g. UP Diliman USC, UST CSC, PUP SKM, FEU CSO) calling for student mobilizations, protest marches, or strike solidarity rallies (e.g. "SA LABAN NG TSUPER, KASAMA ANG KOMYUTER!", "Protestang Bayan", "Assembly sa Welcome Rotonda / Mendiola / Vinzons", "Iskolar ng bayan, dapat nang magwelga") are student political mobilizations, NOT transport strikes.
+   - NEVER classify them as TRANSPORT_STRIKE! Transport strike classification is strictly reserved for official transport federation announcements or transit authorities. Student council protest mobilizations must output category = null (or event_code = "CIVIC_COMMUNITY" with is_cancellation = false).
+
+22. CAMPUS CELEBRATIONS, OBSERVANCES & MEMORANDUMS WITHOUT SUSPENSION:
+   - Academic advisories or memorandums announcing observances, celebrations, or teacher appreciation (e.g. World Teachers' Day, National Teachers' Month, Foundation Day, Intramurals, General Assembly) that do NOT explicitly state that classes are suspended ("walang pasok", "no classes", "classes are suspended", "asynchronous classes") must NEVER be classified as CLASS_SUSPENSION! Output category = null.
+
+23. ROUTINE STREET FURNITURE REPAINTING & LOCAL TREE CLEARING (STRICT NEGATIVE RULE):
+   - Announcements regarding street furniture repainting, waiting shed repairs, park upkeep, or clearing isolated fallen trees on interior streets do NOT cause transit corridor shocks. Output category = null.
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 

@@ -11,6 +11,7 @@
 # Keyword groups are aligned to external.friction_weight table.
 # ============================================================
 
+import re
 from unicode_normalizer import normalize_unicode_text
 
 
@@ -144,7 +145,9 @@ LGU_ADVISORY_KEYWORDS = [
     "estado ng kalamidad",
     "state of calamity",
     "calamity",
-    "disaster",
+    "state of disaster",
+    "disaster declaration",
+    "disaster alert",
     "force majeure",
     # Road / Traffic / City events
     "road closure",
@@ -368,6 +371,21 @@ MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS = [
     "senior citizen booklet",
     "anti-rabies",
     "pet vaccination",
+    # Park, street furniture & localized public fixtures
+    "street furniture",
+    "street furniture repainting",
+    "repainting ng street furniture",
+    "waiting shed repainting",
+    "park maintenance",
+    "park repainting",
+    "furniture repainting",
+    # Localized tree clearing and fallen tree removal
+    "tree clearing",
+    "tree clearing operation",
+    "pagtanggal ng tumumbang puno",
+    "tumumbang puno",
+    "clearing ng puno",
+    "clearing operation sa kalye",
     # Utilities
     "water service interruption",
     "water interruption advisory",
@@ -552,10 +570,18 @@ ACADEMIC_CONTEXT_KEYWORDS = [
 ]
 
 
+def _match_keyword(kw: str, text: str) -> bool:
+    """Return True if kw matches text. Enforces word boundaries for short standalone words."""
+    kw_cf = kw.casefold()
+    if " " in kw_cf or "-" in kw_cf or "." in kw_cf or "/" in kw_cf:
+        return kw_cf in text
+    return bool(re.search(r'\b' + re.escape(kw_cf) + r'\b', text))
+
+
 def _casefold_match(keyword_list: list[str], text: str) -> bool:
     """Return True if any keyword matches the casefolded text."""
     casefolded = normalize_unicode_text(text).casefold()
-    return any(kw.casefold() in casefolded for kw in keyword_list)
+    return any(_match_keyword(kw, casefolded) for kw in keyword_list)
 
 
 def classify_post(text: str, source_type: str | None = None) -> str | None:
@@ -578,32 +604,43 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
     # Normalize decorative Unicode fonts (bold, italic, script, etc.) to plain ASCII
     lowered = normalize_unicode_text(text).casefold()
 
-    academic_match = any(kw.casefold() in lowered for kw in ACADEMIC_KEYWORDS)
-    lgu_match = any(kw.casefold() in lowered for kw in LGU_KEYWORDS)
-    transport_match = any(kw.casefold() in lowered for kw in TRANSPORT_DISRUPTION_KEYWORDS)
-    arena_match = any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
-    train_match = any(kw.casefold() in lowered for kw in TRAIN_DEGRADATION_KEYWORDS)
+    academic_match = any(_match_keyword(kw, lowered) for kw in ACADEMIC_KEYWORDS)
+    lgu_match = any(_match_keyword(kw, lowered) for kw in LGU_KEYWORDS)
+    transport_match = any(_match_keyword(kw, lowered) for kw in TRANSPORT_DISRUPTION_KEYWORDS)
+    arena_match = any(_match_keyword(kw, lowered) for kw in ARENA_EVENT_KEYWORDS)
+    train_match = any(_match_keyword(kw, lowered) for kw in TRAIN_DEGRADATION_KEYWORDS)
     
     is_academic_source = (source_type == "academic")
     academic_context = (
         is_academic_source
-        or any(kw.casefold() in lowered for kw in ACADEMIC_CONTEXT_KEYWORDS)
+        or any(_match_keyword(kw, lowered) for kw in ACADEMIC_CONTEXT_KEYWORDS)
     )
 
     # Health, Relief, and Municipal Maintenance Exclusions
     # If a post is strictly health advice (Leptospirosis/Doxycycline), relief goods distribution,
     # or routine municipal upkeep (declogging, grass cutting, asphalting, profiling),
     # and does NOT contain active suspension, strike, or arena keywords, reject early.
-    has_health_exclusion = any(kw.casefold() in lowered for kw in HEALTH_MEDICAL_EXCLUSION_KEYWORDS)
-    has_relief_exclusion = any(kw.casefold() in lowered for kw in COMMUNITY_RELIEF_EXCLUSION_KEYWORDS)
-    has_maintenance_exclusion = any(kw.casefold() in lowered for kw in MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS)
+    has_health_exclusion = any(_match_keyword(kw, lowered) for kw in HEALTH_MEDICAL_EXCLUSION_KEYWORDS)
+    has_relief_exclusion = any(_match_keyword(kw, lowered) for kw in COMMUNITY_RELIEF_EXCLUSION_KEYWORDS)
+    has_maintenance_exclusion = any(_match_keyword(kw, lowered) for kw in MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS)
     has_hard_disruption = (
-        any(kw.casefold() in lowered for kw in CLASS_SUSPENSION_KEYWORDS)
-        or any(kw.casefold() in lowered for kw in TRANSPORT_DISRUPTION_KEYWORDS)
-        or any(kw.casefold() in lowered for kw in ARENA_EVENT_KEYWORDS)
+        any(_match_keyword(kw, lowered) for kw in CLASS_SUSPENSION_KEYWORDS)
+        or any(_match_keyword(kw, lowered) for kw in TRANSPORT_DISRUPTION_KEYWORDS)
+        or any(_match_keyword(kw, lowered) for kw in ARENA_EVENT_KEYWORDS)
     )
 
     if (has_health_exclusion or has_relief_exclusion or has_maintenance_exclusion) and not has_hard_disruption:
+        return None
+
+    # Student council solidarity statement & protest mobilization discrimination:
+    # Rally invitations and manifestos (e.g. "protestang bayan", "sumama sa pagkilos",
+    # "iskolar ng bayan, dapat nang magwelga", "assembly sa welcome rotonda/mendiola")
+    # are student political mobilizations, NOT transport strikes.
+    has_student_protest = bool(re.search(
+        r'(protestang\s+bayan|sumama\s+sa\s+pagkilos|dadaluyong\s+sa\s+lansangan|iskolar\s+ng\s+bayan,\s+dapat\s+nang\s+magwelga|assembly\s+(?:sa|at)\s+(?:welcome\s+rotonda|mendiola|vinzons|philcoa)|sa\s+laban\s+ng\s+tsuper,\s+kasama\s+ang\s+komyuter)',
+        lowered
+    ))
+    if has_student_protest and not any(_match_keyword(kw, lowered) for kw in CLASS_SUSPENSION_KEYWORDS):
         return None
 
     # Traffic / Number coding / Caravan advisories always route to LGU
@@ -627,3 +664,4 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
         return "academic"
 
     return None
+
