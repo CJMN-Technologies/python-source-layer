@@ -386,6 +386,30 @@ MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS = [
     "tumumbang puno",
     "clearing ng puno",
     "clearing operation sa kalye",
+    # Bridge underpasses, flyovers, overpasses, & micro-arterial closures
+    "ilalim ng tulay",
+    "ilalim ng rosario bridge",
+    "rosario bridge",
+    "underpass",
+    "bridge underpass",
+    "flyover",
+    "overpass",
+    "skyway",
+    "araw ng barangay",
+    "barangay fiesta",
+    "fiesta celebration",
+    "sk council",
+    "sangguniang kabataan",
+    # Civil service & government employee internal suspensions
+    "suspension of work in government",
+    "work in government offices",
+    "government offices is hereby suspended",
+    "skeletal workforce",
+    "skeleton workforce",
+    "national family week",
+    "family week",
+    "city hall employees",
+    "pamahalaang lungsod employees",
     # Utilities
     "water service interruption",
     "water interruption advisory",
@@ -393,6 +417,24 @@ MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS = [
     "manila water advisory",
     "power interruption advisory",
     "meralco maintenance",
+]
+
+# Major corridor stadium and arena venues that legitimately warrant ARENA_EVENT override
+MAJOR_STADIUM_VENUE_KEYWORDS = [
+    "smart araneta",
+    "araneta coliseum",
+    "big dome",
+    "philsports",
+    "phil sports arena",
+    "mall of asia arena",
+    "moa arena",
+    "filoil flying v",
+    "filoil ecoil",
+    "ust tiger dome",
+    "quadricentennial pavilion",
+    "blue eagle gym",
+    "marikina sports center",
+    "rizal memorial",
 ]
 
 # ---------------------------------------------------------------------------
@@ -618,15 +660,18 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
 
     # Health, Relief, and Municipal Maintenance Exclusions
     # If a post is strictly health advice (Leptospirosis/Doxycycline), relief goods distribution,
-    # or routine municipal upkeep (declogging, grass cutting, asphalting, profiling),
-    # and does NOT contain active suspension, strike, or arena keywords, reject early.
+    # routine municipal upkeep (declogging, grass cutting, asphalting, profiling), bridge underpasses/flyovers,
+    # or civil service employee work suspensions, and does NOT contain active student class suspensions,
+    # rail transport strikes, or major stadium venues, reject early.
     has_health_exclusion = any(_match_keyword(kw, lowered) for kw in HEALTH_MEDICAL_EXCLUSION_KEYWORDS)
     has_relief_exclusion = any(_match_keyword(kw, lowered) for kw in COMMUNITY_RELIEF_EXCLUSION_KEYWORDS)
     has_maintenance_exclusion = any(_match_keyword(kw, lowered) for kw in MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS)
+    
+    # Genuine corridor-level disruptions that legitimately override maintenance/civic exclusions
     has_hard_disruption = (
         any(_match_keyword(kw, lowered) for kw in CLASS_SUSPENSION_KEYWORDS)
         or any(_match_keyword(kw, lowered) for kw in TRANSPORT_DISRUPTION_KEYWORDS)
-        or any(_match_keyword(kw, lowered) for kw in ARENA_EVENT_KEYWORDS)
+        or any(_match_keyword(kw, lowered) for kw in MAJOR_STADIUM_VENUE_KEYWORDS)
     )
 
     if (has_health_exclusion or has_relief_exclusion or has_maintenance_exclusion) and not has_hard_disruption:
@@ -643,15 +688,23 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
     if has_student_protest and not any(_match_keyword(kw, lowered) for kw in CLASS_SUSPENSION_KEYWORDS):
         return None
 
-    # Traffic / Number coding / Caravan advisories always route to LGU
+    # Traffic / Number coding / Caravan advisories route to LGU as civic notices
+    # BUT if they are micro-arterial underpass/flyover closures or local fiesta rerouting, drop them early.
     if any(k in lowered for k in ["number coding", "coding scheme", "abiso sa mga motorista", "abiso mula sa mmda", "lto caravan", "theoretical driving course"]):
+        if has_maintenance_exclusion and not has_hard_disruption:
+            return None
         return "lgu"
 
-    # Transport/train disruptions and arena events are always relevant
+    # Transport/train disruptions are always relevant
     if transport_match or train_match:
+        if is_academic_source or (academic_match and academic_context):
+            return "academic"
         return "lgu"
 
     if arena_match:
+        # If the arena match is within a micro-arterial underpass, bridge, or barangay fiesta advisory, drop it
+        if has_maintenance_exclusion and not any(_match_keyword(kw, lowered) for kw in MAJOR_STADIUM_VENUE_KEYWORDS):
+            return None
         return "lgu"
 
     if academic_match and academic_context:

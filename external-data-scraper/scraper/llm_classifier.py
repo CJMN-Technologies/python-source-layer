@@ -146,7 +146,8 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - Do NOT classify as CLASS_SUSPENSION. Output category = "academic_calendar" or category = null so it does not trigger premature daily operational transit shocks weeks in advance.
 
 17. GOVERNMENT & CIVIL SERVICE EMPLOYEE WORK SUSPENSIONS vs COMMUTER CLASS SUSPENSIONS:
-   - Declarations of half-day or holiday work suspensions applicable solely to city hall, municipal departments, courts/judiciary, or national civil service agencies (e.g. Civil Service Family Week, city hall skeleton workforce, government work-from-home orders) where schools and colleges remain in normal session must NEVER be classified as CLASS_SUSPENSION! Output category = "lgu", event_code = "CIVIC_MAINTENANCE", or category = null.
+   - Declarations of half-day or holiday work suspensions applicable solely to city hall, municipal departments, courts/judiciary, or national civil service agencies (e.g. Malacañang Memorandum Circular No. 64, Civil Service Commission National Family Week, city hall skeleton workforce, government work-from-home orders) where schools, universities, and private businesses remain in normal session must NEVER be classified as CLASS_SUSPENSION!
+   - Output category = "lgu", event_code = "CIVIC_MAINTENANCE", or category = null. Transit ridership is driven by student and commercial commuters, not municipal skeleton shifts.
 
 18. ROUTINE MUNICIPAL MAINTENANCE, SOCIAL PROFILING & CARAVANS (STRICT NEGATIVE RULE):
    - Routine LGU posts regarding drainage declogging, canal dredging/desilting, ditch cleaning, grass cutting, tree trimming, asphalting/pothole repairs, TUPAD/4Ps profiling/payouts, civil registry/birth registration caravans, voter registration caravans, senior/PWD profiling, pet anti-rabies vaccination, or scheduled water/power interruptions do NOT impact LRT-2 rail operations. Output category = null.
@@ -166,6 +167,13 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
 
 23. ROUTINE STREET FURNITURE REPAINTING & LOCAL TREE CLEARING (STRICT NEGATIVE RULE):
    - Announcements regarding street furniture repainting, waiting shed repairs, park upkeep, or clearing isolated fallen trees on interior streets do NOT cause transit corridor shocks. Output category = null.
+
+24. HYPER-LOCAL BARANGAY FIESTAS, SK CONCERTS & BRIDGE UNDERPASS / FLYOVER CLOSURES (STRICT NEGATIVE RULE):
+   - Announcements regarding temporary road closures under bridge underpasses, street flyovers, overpasses, or interior streets for barangay founding anniversaries ("Araw ng Barangay"), barangay fiesta celebrations, or Sangguniang Kabataan (SK) local band concerts (e.g. "Abiso sa mga Motorista: Pansamantalang pagpapasara ng ilalim ng Rosario Bridge kaugnay ng Araw ng Barangay Rosario / Live Band Concert", "Barangay Fiesta Street Dancing", "SK Battle of the Bands"):
+   - These are hyper-local neighborhood assemblies and surface motorist traffic advisories, NOT major transit-disrupting arena events!
+   - NEVER classify them as MAJOR_ARENA_EVENT!
+   - NEVER classify them as CLASS_SUSPENSION!
+   - Output category = null (reject — no LRT-2 rail transit disruption) or event_code = "CIVIC_MAINTENANCE" with is_cancellation = false.
 
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:

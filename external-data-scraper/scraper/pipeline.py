@@ -403,6 +403,11 @@ def is_off_corridor_venue(text: str) -> bool:
         r"\bbulacan\b",
         r"\bpampanga\b",
         r"\bpayatas\b",
+        r"rosario\s+bridge",
+        r"\brosario\b",
+        r"c\.\s*raymundo",
+        r"ortigas\s+ave",
+        r"amang\s+rodriguez",
     ]
     if any(re.search(pat, t) for pat in off_corridor_patterns):
         corridor_stations = [
@@ -418,7 +423,8 @@ def is_off_corridor_venue(text: str) -> bool:
 def is_micro_venue_or_administrative(text: str) -> bool:
     """
     Check whether an event announcement is a micro-venue recital, ticket selling booth,
-    street food bazaar, river ferry tour, online admissions form deadline, or civic theme month
+    street food bazaar, bridge underpass/flyover closure, barangay fiesta gathering,
+    river ferry tour, online admissions form deadline, or civic theme month
     that must not trigger MAJOR_ARENA_EVENT.
     """
     t = text.casefold()
@@ -448,8 +454,47 @@ def is_micro_venue_or_administrative(text: str) -> bool:
         r"youth[\s_-]*market",
         r"river\s+ferry\s+tour",
         r"guided\s+tour",
+        r"ilalim\s+ng\s+(?:tulay|bridge|flyover|overpass|rosario)",
+        r"(?:bridge\s+)?underpass",
+        r"\bflyover\b",
+        r"\boverpass\b",
+        r"araw\s+ng\s+barangay",
+        r"barangay\s+fiesta",
+        r"fiesta\s+celebration",
+        r"sangguniang\s+kabataan",
+        r"\bsk\s+(?:council|federation|night|concert|battle)\b",
     ]
     return any(re.search(pat, t) for pat in patterns)
+
+
+def is_civil_service_work_suspension(text: str) -> bool:
+    """
+    Check whether a work suspension notice applies strictly to internal government offices,
+    city hall departments, or civil service employees, without suspending general school classes
+    or commuter rail transit.
+    """
+    t = text.casefold()
+    gov_patterns = [
+        r"suspension\s+of\s+work\s+in\s+government",
+        r"work\s+in\s+government\s+offices",
+        r"civil\s+service\s+commission",
+        r"national\s+family\s+week",
+        r"\bfamily\s+week\b",
+        r"skelet(?:al|on)\s+workforce",
+        r"city\s+hall\s+employees",
+        r"pamahalaang\s+lungsod\s+employees",
+    ]
+    if any(re.search(pat, t) for pat in gov_patterns):
+        class_patterns = [
+            r"suspension\s+of\s+classes",
+            r"walang\s+pasok\s+sa\s+lahat\s+ng\s+antas",
+            r"walang\s+pasok\s+sa\s+eskwela",
+            r"classes\s+(?:are\s+)?suspended",
+            r"no\s+classes",
+        ]
+        if not any(re.search(cp, t) for cp in class_patterns):
+            return True
+    return False
 
 
 
@@ -720,6 +765,20 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                             print(f"  Skipped past historical/commemorative post ({date_match.group(0)} is > 14 days ago).")
                             continue
 
+                        # Advance horizon guardrail (>14 days in future) for calendar breaks / holidays
+                        # Suppress premature daily operational transit shocks weeks in advance
+                        if (extracted_dt - now).days > 14 and event_code_val in ("CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT"):
+                            if any(k in combined.casefold() for k in ["holiday", "sem break", "undas", "christmas break", "holy week", "term break", "academic calendar"]):
+                                print(f"  Skipped advance break/holiday notice ({date_match.group(0)} is > 14 days in future).")
+                                continue
+
+                        # Civil service work suspension guardrail
+                        # City hall or national government agency half-days / Family Week do not suspend classes or rail transit
+                        if event_code_val == "CLASS_SUSPENSION" and is_civil_service_work_suspension(combined):
+                            print(f"  Reclassified internal civil service work suspension ({date_match.group(0)}) to CIVIC_MAINTENANCE.")
+                            event_code_val = "CIVIC_MAINTENANCE"
+                            llm_res["event_code"] = "CIVIC_MAINTENANCE"
+
                         # Micro-venue & street food bazaar suppression (MAJOR_ARENA_EVENT only)
                         if event_code_val == "MAJOR_ARENA_EVENT" and is_micro_venue_or_administrative(combined):
                             print(f"  Skipped micro-venue/bazaar/ticket booth post ({date_match.group(0)}) from MAJOR_ARENA_EVENT.")
@@ -772,7 +831,7 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                     "category":                 "academic" if category in ("acad", "academic", "academic_calendar") else ("lgu" if category == "lgu" else category),
                     "event_name":               event_name[:500] if event_name else None,
                     "event_date":               event_date[:100] if event_date else None,
-                    "event_code":               llm_res.get("event_code"),
+                    "event_code":               event_code_val or llm_res.get("event_code"),
                     "is_cancellation":          bool(llm_res.get("is_cancellation")),
                     "cancellation_target_code": llm_res.get("cancellation_target_code"),
                     "scraped_at":               now.isoformat(),
