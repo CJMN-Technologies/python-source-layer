@@ -175,6 +175,17 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - NEVER classify them as CLASS_SUSPENSION!
    - Output category = null (reject — no LRT-2 rail transit disruption) or event_code = "CIVIC_MAINTENANCE" with is_cancellation = false.
 
+25. PROVINCIAL & SATELLITE CAMPUS BRANCH DISCRIMINATION (STRICT NEGATIVE RULE):
+   - When an announcement from a university or student publication (e.g. The Varsitarian, The Guidon, FEU Advocate, DLSU The LaSallian) refers specifically to a provincial or satellite campus outside the transit corridor (e.g. UST General Santos / GenSan, UST Santa Rosa / Laguna, Ateneo de Davao / Cebu / Zamboanga, DLSU Laguna, FEU Cavite / Alabang, UP Visayas / Mindanao / Baguio) and does NOT announce closures for Manila / Quezon City main campuses:
+   - Output category = null (reject — outside LRT-2 rail corridor).
+
+26. ROUTINE ACADEMIC CALENDAR CONSULTATION & POST-EXAM SESSIONS vs EMERGENCY SHIFTS:
+   - Routine academic reminders announcing that scheduled post-midterm asynchronous consultation sessions, reading days, or departmental meetings "shall proceed as scheduled" as per the approved institutional academic calendar are routine instructional activities, NOT emergency ONLINE_CLASS_SHIFT or CLASS_SUSPENSION!
+   - Unless an unforeseen external emergency (severe weather, transport strike, infrastructure failure, extreme heat) forced the shift, output category = null or category = "academic_calendar" so it does not inject emergency class suspension shocks.
+
+27. V-LEAGUE & INTER-COLLEGIATE TOURNAMENT VENUE OVERRIDES:
+   - When collegiate or club athletic matches (V-League Collegiate Challenge, Spikers' Turf, Shakey's Super League, UAAP, NCAA) feature universities (e.g. UST vs Adamson, FEU vs DLSU) playing at a tournament arena (e.g. Filoil EcoOil Centre / San Juan Arena, Smart Araneta Coliseum, PhilSports Arena, Rizal Memorial), classify with event_code = "MAJOR_ARENA_EVENT" and concise event_name (e.g. "V-League Collegiate Challenge: UST vs Adamson") so transit routing correctly targets the physical arena station rather than the university campus.
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 

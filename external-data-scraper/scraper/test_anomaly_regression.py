@@ -141,6 +141,59 @@ def run_tests():
     cat5_strike = classify_post(strike_post, source_type="academic")
     assert_true(cat5_strike == "academic", "classify_post() preserves transport strike EVM online shift")
 
+    # -------------------------------------------------------------------------
+    # TEST 6: V-League Collegiate Challenge Arena Venue Routing (external_acad_0298)
+    # -------------------------------------------------------------------------
+    print("\n--- Test Suite 6: V-League & Filoil EcoOil Arena Routing ---")
+    vleague_post = """
+    The UST Golden Spikers will face the Adamson Soaring Falcons in Game 1 of the
+    V-League Collegiate Challenge Finals at the Filoil EcoOil Centre in San Juan City.
+    """
+    cat6_vleague = classify_post(vleague_post)
+    assert_true(cat6_vleague in ("lgu", "arena"), "classify_post() captures V-League collegiate challenge as arena event")
+    assert_true(not is_off_corridor_venue(vleague_post), "is_off_corridor_venue() correctly recognizes Filoil EcoOil Centre as on-corridor (J. Ruiz)")
+
+    # -------------------------------------------------------------------------
+    # TEST 7: Routine Academic Calendar Asynchronous Consultations (external_acad_0301)
+    # -------------------------------------------------------------------------
+    print("\n--- Test Suite 7: Routine Academic Calendar Asynchronous Consultations ---")
+    midterm_async_post = """
+    ADVISORY: Please be reminded that asynchronous sessions after midterm examination
+    shall proceed as scheduled as per academic calendar for all colleges.
+    Faculty members will conduct online consultations.
+    """
+    cat7_midterm = classify_post(midterm_async_post)
+    assert_true(cat7_midterm is None, "classify_post() drops routine post-midterm asynchronous consultation reminder")
+
+    # -------------------------------------------------------------------------
+    # TEST 8: Provincial & Satellite Campus Suppression (external_acad_0300)
+    # -------------------------------------------------------------------------
+    print("\n--- Test Suite 8: Provincial & Satellite Campus Discrimination ---")
+    gensan_post = """
+    Following the magnitude 6.0 earthquake in Davao Occidental, classes in UST General Santos
+    (GenSan campus) are shifted to online mode until further notice.
+    """
+    cat8_gensan = classify_post(gensan_post)
+    assert_true(cat8_gensan is None, "classify_post() drops UST General Santos (GenSan) provincial campus post")
+    assert_true(is_off_corridor_venue(gensan_post), "is_off_corridor_venue() flags GenSan campus as off-corridor")
+
+    santa_rosa_post = """
+    UST Santa Rosa Laguna campus advisory: Class suspension for campus blessing and tree planting.
+    """
+    cat8_sta_rosa = classify_post(santa_rosa_post)
+    assert_true(cat8_sta_rosa is None, "classify_post() drops UST Santa Rosa / Laguna campus post")
+    assert_true(is_off_corridor_venue(santa_rosa_post), "is_off_corridor_venue() flags Santa Rosa / Laguna as off-corridor")
+
+    # -------------------------------------------------------------------------
+    # TEST 9: Off-Corridor Arterials Geofencing (external_lgu_0354)
+    # -------------------------------------------------------------------------
+    print("\n--- Test Suite 9: Off-Corridor Arterials (Mindanao Avenue) ---")
+    mindanao_ave_post = """
+    Traffic Advisory: Heavy traffic along Mindanao Avenue due to emergency MWSS water pipeline
+    maintenance operation and vehicular collision near Congressional.
+    """
+    assert_true(is_off_corridor_venue(mindanao_ave_post), "is_off_corridor_venue() flags Mindanao Avenue as off-corridor (>8 km from LRT-2)")
+
     print("\n" + "=" * 70)
     print(f"VERIFICATION SUMMARY: {passed_tests} / {total_tests} tests PASSED ({passed_tests/total_tests*100:.1f}%)")
     print("=" * 70)
@@ -152,3 +205,4 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
+

@@ -408,12 +408,18 @@ def is_off_corridor_venue(text: str) -> bool:
         r"c\.\s*raymundo",
         r"ortigas\s+ave",
         r"amang\s+rodriguez",
+        r"gensan",
+        r"general\s+santos",
+        r"santa\s+rosa",
+        r"sta\.?\s*rosa",
+        r"mindanao\s+ave",
+        r"mindanao\s+avenue",
     ]
     if any(re.search(pat, t) for pat in off_corridor_patterns):
         corridor_stations = [
             "recto", "legarda", "pureza", "v. mapa", "v.mapa", "j. ruiz", "j.ruiz",
             "gilmore", "betty go", "cubao", "araneta", "anonas", "katipunan",
-            "santolan", "marikina", "antipolo", "lrt-2", "lrt 2", "line 2"
+            "santolan", "marikina", "antipolo", "lrt-2", "lrt 2", "line 2", "filoil"
         ]
         if not any(k in t for k in corridor_stations):
             return True
@@ -765,11 +771,18 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                             print(f"  Skipped past historical/commemorative post ({date_match.group(0)} is > 14 days ago).")
                             continue
 
-                        # Advance horizon guardrail (>14 days in future) for calendar breaks / holidays
+                        # Advance horizon guardrail (>14 days in future) for calendar breaks / statutory holidays
                         # Suppress premature daily operational transit shocks weeks in advance
                         if (extracted_dt - now).days > 14 and event_code_val in ("CLASS_SUSPENSION", "ONLINE_CLASS_SHIFT"):
-                            if any(k in combined.casefold() for k in ["holiday", "sem break", "undas", "christmas break", "holy week", "term break", "academic calendar"]):
+                            if any(k in combined.casefold() for k in ["holiday", "sem break", "undas", "christmas break", "holy week", "term break", "academic calendar", "special non-working", "non-working", "proclamation", "asean summit", "summit"]):
                                 print(f"  Skipped advance break/holiday notice ({date_match.group(0)} is > 14 days in future).")
+                                continue
+
+                        # Scheduled academic calendar asynchronous reminder guardrail
+                        # Routine post-exam consultation sessions are routine calendar activity
+                        if any(k in combined.casefold() for k in ["asynchronous sessions after midterm", "shall proceed as scheduled", "proceed as scheduled", "post-midterm asynchronous"]):
+                            if not any(k in combined.casefold() for k in ["walang pasok", "suspend", "bagyo", "baha", "welga", "strike"]):
+                                print(f"  Skipped routine academic calendar asynchronous reminder ({date_match.group(0)}).")
                                 continue
 
                         # Civil service work suspension guardrail

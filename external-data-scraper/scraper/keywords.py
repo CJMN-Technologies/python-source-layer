@@ -282,6 +282,13 @@ ARENA_EVENT_KEYWORDS = [
     "inter-barangay league",
     "cheerdance competition",
     "esports tournament",
+    "v-league",
+    "v league",
+    "collegiate challenge",
+    "filoil ecooil centre",
+    "filoil ecooil center",
+    "filoil ecooil",
+    "san juan arena",
 ]
 
 # ---------------------------------------------------------------------------
@@ -435,6 +442,52 @@ MAJOR_STADIUM_VENUE_KEYWORDS = [
     "blue eagle gym",
     "marikina sports center",
     "rizal memorial",
+    "filoil ecooil centre",
+    "filoil ecooil center",
+    "filoil ecooil",
+    "san juan arena",
+    "v-league",
+    "v league",
+    "collegiate challenge",
+]
+
+# ---------------------------------------------------------------------------
+# GROUP 5D — OFF-CORRIDOR PROVINCIAL & SATELLITE CAMPUS EXCLUSIONS
+# Posts strictly concerning satellite campuses outside the LRT-2 corridor
+# ---------------------------------------------------------------------------
+PROVINCIAL_BRANCH_EXCLUSIONS = [
+    "gensan",
+    "general santos",
+    "santa rosa",
+    "sta. rosa",
+    "laguna campus",
+    "cavite campus",
+    "alabang campus",
+    "clark campus",
+    "pampanga campus",
+    "batangas campus",
+    "lipa campus",
+    "davao campus",
+    "davao occidental",
+    "cebu campus",
+    "iloilo campus",
+]
+
+# ---------------------------------------------------------------------------
+# GROUP 5E — ROUTINE ACADEMIC CALENDAR & POST-EXAM ASYNCHRONOUS EXCLUSIONS
+# Scheduled non-emergency academic calendar consultation or reading days
+# ---------------------------------------------------------------------------
+ROUTINE_ACADEMIC_CALENDAR_EXCLUSIONS = [
+    "shall proceed as scheduled",
+    "proceed as scheduled",
+    "as per academic calendar",
+    "post-midterm asynchronous",
+    "asynchronous sessions after midterm",
+    "asynchronous sessions after midterm examination",
+    "routine asynchronous",
+    "scheduled asynchronous",
+    "consultation sessions",
+    "academic consultation",
 ]
 
 # ---------------------------------------------------------------------------
@@ -675,6 +728,30 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
     )
 
     if (has_health_exclusion or has_relief_exclusion or has_maintenance_exclusion) and not has_hard_disruption:
+        return None
+
+    # Provincial Satellite Campus Discrimination:
+    # If a post is strictly about an off-corridor provincial campus (e.g. GenSan, Santa Rosa, Cavite)
+    # and does not mention any LRT-2 corridor stations or transit corridor LGUs, reject early.
+    has_provincial_exclusion = any(_match_keyword(kw, lowered) for kw in PROVINCIAL_BRANCH_EXCLUSIONS)
+    corridor_mentions = [
+        "manila", "recto", "legarda", "pureza", "v. mapa", "v.mapa", "j. ruiz", "j.ruiz",
+        "gilmore", "betty go", "cubao", "araneta", "anonas", "katipunan",
+        "santolan", "marikina", "antipolo", "lrt-2", "lrt 2", "line 2", "quezon city", "san juan", "pasig"
+    ]
+    has_corridor_mention = any(k in lowered for k in corridor_mentions)
+    if has_provincial_exclusion and not has_corridor_mention:
+        return None
+
+    # Scheduled Academic Calendar Asynchronous Reminder Discrimination:
+    # Routine post-midterm asynchronous consultation sessions "as per academic calendar"
+    # are routine instructional activities, NOT emergency modality shifts.
+    has_routine_calendar_exclusion = any(_match_keyword(kw, lowered) for kw in ROUTINE_ACADEMIC_CALENDAR_EXCLUSIONS)
+    has_emergency_disruption = bool(re.search(
+        r'(suspend|walang\s*pasok|bagyo|typhoon|baha|flood|strike|welga|tigil\s+pasada|heat\s+index|emergency|earthquake|lindol)',
+        lowered
+    ))
+    if has_routine_calendar_exclusion and not has_emergency_disruption:
         return None
 
     # Student council solidarity statement & protest mobilization discrimination:
