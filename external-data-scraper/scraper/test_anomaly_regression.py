@@ -194,6 +194,25 @@ def run_tests():
     """
     assert_true(is_off_corridor_venue(mindanao_ave_post), "is_off_corridor_venue() flags Mindanao Avenue as off-corridor (>8 km from LRT-2)")
 
+    # -------------------------------------------------------------------------
+    # TEST 10: Routine Academic Modality Clarifications & Maintained Schedules (external_acad_0302)
+    # -------------------------------------------------------------------------
+    print("\n--- Test Suite 10: Modality Clarifications & Maintained Schedules ---")
+    ue_usc_clarification_post = """
+    COUNCIL ADVISORY | CLARIFICATION ON POST - MIDTERM CLASS MODALITY
+    The University Student Council clarifies that the university's official asynchronous class schedule
+    will be followed, as October 19 is included in the official midterm examination schedule.
+    Additionally, the survey conducted gathered insufficient responses to support the proposed
+    petition for changes to the schedule. The existing schedule for asynchronous classes will be maintained:
+    • October 15: Tuesday and Thursday Classes
+    • October 17: Saturday Classes
+    • October 21: Monday and Wednesday Classes
+    • October 23: Friday Classes
+    #TuloySaNasimulanTungoSaKinabukasan #USC2627 #UEManila
+    """
+    cat10_clarification = classify_post(ue_usc_clarification_post)
+    assert_true(cat10_clarification is None, "classify_post() drops student council post-midterm modality clarification and schedule maintenance notice")
+
     print("\n" + "=" * 70)
     print(f"VERIFICATION SUMMARY: {passed_tests} / {total_tests} tests PASSED ({passed_tests/total_tests*100:.1f}%)")
     print("=" * 70)

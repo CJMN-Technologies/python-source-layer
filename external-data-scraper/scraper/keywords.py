@@ -480,14 +480,41 @@ PROVINCIAL_BRANCH_EXCLUSIONS = [
 ROUTINE_ACADEMIC_CALENDAR_EXCLUSIONS = [
     "shall proceed as scheduled",
     "proceed as scheduled",
+    "will be followed",
+    "will be maintained",
+    "schedule will be followed",
+    "schedule will be maintained",
     "as per academic calendar",
+    "post-midterm",
+    "post - midterm",
     "post-midterm asynchronous",
+    "post - midterm asynchronous",
+    "post-midterm class modality",
+    "post - midterm class modality",
+    "post-final",
+    "post - final",
+    "post-exam",
+    "post - exam",
+    "clarification on post - midterm",
+    "clarification on post-midterm",
+    "clarification on class modality",
+    "clarification on post-exam",
+    "clarification on post - exam",
     "asynchronous sessions after midterm",
     "asynchronous sessions after midterm examination",
+    "official asynchronous class schedule",
+    "existing schedule for asynchronous classes",
+    "schedule for asynchronous classes will be maintained",
+    "asynchronous class schedule will be followed",
+    "asynchronous class schedule will be maintained",
+    "insufficient responses to support the proposed petition",
+    "petition for changes to the schedule",
+    "official midterm examination schedule",
     "routine asynchronous",
     "scheduled asynchronous",
     "consultation sessions",
     "academic consultation",
+    "routine consultation",
 ]
 
 # ---------------------------------------------------------------------------
@@ -744,9 +771,15 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
         return None
 
     # Scheduled Academic Calendar Asynchronous Reminder Discrimination:
-    # Routine post-midterm asynchronous consultation sessions "as per academic calendar"
+    # Routine post-midterm asynchronous consultation sessions / exam schedule clarifications
     # are routine instructional activities, NOT emergency modality shifts.
-    has_routine_calendar_exclusion = any(_match_keyword(kw, lowered) for kw in ROUTINE_ACADEMIC_CALENDAR_EXCLUSIONS)
+    has_routine_calendar_exclusion = (
+        any(_match_keyword(kw, lowered) for kw in ROUTINE_ACADEMIC_CALENDAR_EXCLUSIONS)
+        or bool(re.search(
+            r'(post\s*[-–—]\s*(?:midterm|final|exam|prelim)|clarification\s+on\s+.*(?:class\s+modality|asynchronous|schedule)|(?:official|existing|routine|scheduled)\s+asynchronous\s+class\s+schedule|asynchronous\s+class\s+schedule\s+(?:will|shall)\s+be\s+(?:followed|maintained)|insufficient\s+responses\s+to\s+support\s+the\s+proposed\s+petition|petition\s+for\s+changes\s+to\s+the\s+schedule)',
+            lowered
+        ))
+    )
     has_emergency_disruption = bool(re.search(
         r'(suspend|walang\s*pasok|bagyo|typhoon|baha|flood|strike|welga|tigil\s+pasada|heat\s+index|emergency|earthquake|lindol)',
         lowered

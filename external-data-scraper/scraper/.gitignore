@@ -15,3 +15,8 @@ env/
 
 # Test files
 test_keywords.py
+test_cookie_email.py
+test_email.py
+test_pipeline_logic.py
+test_weather.py
+.pytest_cache/

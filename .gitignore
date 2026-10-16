@@ -15,4 +15,6 @@ academic_paper/
 *manuscript*
 *Manuscript*
 *.docx
+tests/
+
 

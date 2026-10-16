@@ -180,7 +180,7 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
    - Output category = null (reject — outside LRT-2 rail corridor).
 
 26. ROUTINE ACADEMIC CALENDAR CONSULTATION & POST-EXAM SESSIONS vs EMERGENCY SHIFTS:
-   - Routine academic reminders announcing that scheduled post-midterm asynchronous consultation sessions, reading days, or departmental meetings "shall proceed as scheduled" as per the approved institutional academic calendar are routine instructional activities, NOT emergency ONLINE_CLASS_SHIFT or CLASS_SUSPENSION!
+   - Routine academic reminders or student council advisories clarifying that scheduled post-midterm/post-exam asynchronous consultation sessions, reading days, or examination calendars "shall proceed as scheduled", "will be followed", or "will be maintained" as per the approved institutional academic calendar (including clarifications after student petition surveys gathered insufficient responses) are routine instructional activities, NOT emergency ONLINE_CLASS_SHIFT or CLASS_SUSPENSION!
    - Unless an unforeseen external emergency (severe weather, transport strike, infrastructure failure, extreme heat) forced the shift, output category = null or category = "academic_calendar" so it does not inject emergency class suspension shocks.
 
 27. V-LEAGUE & INTER-COLLEGIATE TOURNAMENT VENUE OVERRIDES:

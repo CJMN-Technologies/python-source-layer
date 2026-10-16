@@ -779,10 +779,21 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
                                 continue
 
                         # Scheduled academic calendar asynchronous reminder guardrail
-                        # Routine post-exam consultation sessions are routine calendar activity
-                        if any(k in combined.casefold() for k in ["asynchronous sessions after midterm", "shall proceed as scheduled", "proceed as scheduled", "post-midterm asynchronous"]):
+                        # Routine post-exam consultation sessions and schedule clarifications are routine calendar activity
+                        if (
+                            any(k in combined.casefold() for k in [
+                                "asynchronous sessions after midterm", "shall proceed as scheduled", "proceed as scheduled",
+                                "post-midterm asynchronous", "post - midterm", "post-midterm", "clarification on post",
+                                "official asynchronous class schedule", "schedule for asynchronous classes", "will be maintained",
+                                "will be followed", "insufficient responses to support"
+                            ])
+                            or bool(re.search(
+                                r'(post\s*[-–—]\s*(?:midterm|final|exam|prelim)|clarification\s+on\s+.*(?:class\s+modality|asynchronous|schedule)|(?:official|existing|routine|scheduled)\s+asynchronous\s+class\s+schedule|asynchronous\s+class\s+schedule\s+(?:will|shall)\s+be\s+(?:followed|maintained)|insufficient\s+responses\s+to\s+support\s+the\s+proposed\s+petition|petition\s+for\s+changes\s+to\s+the\s+schedule)',
+                                combined.casefold()
+                            ))
+                        ):
                             if not any(k in combined.casefold() for k in ["walang pasok", "suspend", "bagyo", "baha", "welga", "strike"]):
-                                print(f"  Skipped routine academic calendar asynchronous reminder ({date_match.group(0)}).")
+                                print(f"  Skipped routine academic calendar asynchronous reminder/clarification ({date_match.group(0)}).")
                                 continue
 
                         # Civil service work suspension guardrail
