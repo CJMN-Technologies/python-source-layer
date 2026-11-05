@@ -186,6 +186,18 @@ CRITICAL CONTEXT & DISCRIMINATION RULES:
 27. V-LEAGUE & INTER-COLLEGIATE TOURNAMENT VENUE OVERRIDES:
    - When collegiate or club athletic matches (V-League Collegiate Challenge, Spikers' Turf, Shakey's Super League, UAAP, NCAA) feature universities (e.g. UST vs Adamson, FEU vs DLSU) playing at a tournament arena (e.g. Filoil EcoOil Centre / San Juan Arena, Smart Araneta Coliseum, PhilSports Arena, Rizal Memorial), classify with event_code = "MAJOR_ARENA_EVENT" and concise event_name (e.g. "V-League Collegiate Challenge: UST vs Adamson") so transit routing correctly targets the physical arena station rather than the university campus.
 
+28. NCAA BASKETBALL TOURNAMENT VENUE ROUTING:
+   - When an athletic announcement or ticket giveaway mentions NCAA basketball matches (e.g. San Beda vs EAC, Letran, Benilde, Mapua, Perpetual, etc.) without specifying another stadium, NCAA tournament games are hosted at Filoil EcoOil Centre (San Juan Arena). Always classify with event_code = "MAJOR_ARENA_EVENT" and concise event_name (e.g. "NCAA Basketball: San Beda vs EAC") so routing maps to J. Ruiz station rather than the posting university's home campus.
+
+29. UNIVERSITY ADMINISTRATIVE OFFICE CUT-OFFS vs CLASS SUSPENSIONS (STRICT NEGATIVE RULE):
+   - Announcements regarding early cut-off or suspension of university administrative offices, Saturday service transactions, or office operations ending early (e.g. for Foundation Day convocation, staff fellowship, or routine skeletal staffing) where classes are NOT suspended must NEVER be classified as CLASS_SUSPENSION or Holiday! Output category = null.
+
+30. INTRA-CAMPUS ACADEMIC THEATERS & RECITAL HALLS vs MAJOR ARENA CONCERTS (STRICT NEGATIVE RULE):
+   - Campus choir, drama, or musical performances held in intra-campus academic theaters, auditoriums, or recital halls (e.g. IBG-KAL Theater at UP Diliman, Albertus Magnus Auditorium at UST, FEU Auditorium) are small academic gatherings (200-500 seats), NOT transit-shattering major arena concerts. Output category = null.
+
+31. DRIVER LICENSING & THEORETICAL DRIVING COURSE (TDC) CARAVANS (STRICT NEGATIVE RULE):
+   - Free Theoretical Driving Course (TDC), LTO student permit seminars, and driver license assistance caravans conducted by LGUs or barangays at multipurpose halls are routine municipal services with zero rail transit impact. Output category = null.
+
 === FRICTION INDEX REFERENCE (what affects LRT-2 ridership) ===
 The following trigger types are relevant and SHOULD be classified:
 

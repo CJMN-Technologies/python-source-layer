@@ -64,6 +64,15 @@ CLASS_SUSPENSION_KEYWORDS = [
     "enriched virtual mode of instruction",
     "enriched virtual mode",
     "enriched virtual",
+    "enhanced virtual mode of instruction",
+    "enhanced virtual mode",
+    "enhanced virtual",
+    "shifts to virtual classes",
+    "shifts to virtual",
+    "shifts to online",
+    "shifts to asynchronous",
+    "shifts to remote",
+    "shifts to evm",
     "evm of instruction",
     "evm modality",
     "shift to evm",
@@ -424,6 +433,15 @@ MUNICIPAL_MAINTENANCE_EXCLUSION_KEYWORDS = [
     "manila water advisory",
     "power interruption advisory",
     "meralco maintenance",
+    # Driver licensing, training, & seminars
+    "theoretical driving course",
+    "libreng theoretical driving course",
+    "tdc caravan",
+    "tdc certificate",
+    "student permit caravan",
+    "lto caravan",
+    "driver's license caravan",
+    "driving course caravan",
 ]
 
 # Major corridor stadium and arena venues that legitimately warrant ARENA_EVENT override
@@ -449,6 +467,45 @@ MAJOR_STADIUM_VENUE_KEYWORDS = [
     "v-league",
     "v league",
     "collegiate challenge",
+    "ncaa basketball",
+    "ncaa game",
+    "ncaa games",
+    "ncaa tickets",
+    "ncaa season",
+]
+
+# ---------------------------------------------------------------------------
+# GROUP 5F — CAMPUS ACADEMIC THEATERS & RECITAL HALL EXCLUSIONS
+# Small-scale intra-campus performance venues that are not transit arenas
+# ---------------------------------------------------------------------------
+CAMPUS_THEATER_EXCLUSIONS = [
+    "ibg-kal theater",
+    "ibg-kal",
+    "ibg kal",
+    "kal theater",
+    "albertus magnus auditorium",
+    "feu auditorium",
+    "ust auditorium",
+    "pup theater",
+    "recital hall",
+    "tanghalang",
+]
+
+# ---------------------------------------------------------------------------
+# GROUP 5G — UNIVERSITY ADMINISTRATIVE OFFICE OPERATION EXCLUSIONS
+# Internal office transaction adjustments that do not suspend classes
+# ---------------------------------------------------------------------------
+UNIVERSITY_OFFICE_EXCLUSIONS = [
+    "early cut-off of office operations",
+    "early cutoff of office operations",
+    "suspension of saturday service",
+    "suspension of saturday services",
+    "office operations will end early",
+    "regular office transactions will officially resume",
+    "regular office transactions will resume",
+    "early cut-off of office",
+    "suspension of office operations",
+    "early closure of offices",
 ]
 
 # ---------------------------------------------------------------------------
@@ -757,6 +814,19 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
     if (has_health_exclusion or has_relief_exclusion or has_maintenance_exclusion) and not has_hard_disruption:
         return None
 
+    # University Administrative Office Cut-off Discrimination:
+    # Early cut-off of administrative office operations or Saturday service suspension
+    # where classes are maintained must be dropped early.
+    has_office_exclusion = any(_match_keyword(kw, lowered) for kw in UNIVERSITY_OFFICE_EXCLUSIONS)
+    if has_office_exclusion and not any(_match_keyword(kw, lowered) for kw in CLASS_SUSPENSION_KEYWORDS):
+        return None
+
+    # Campus Academic Theaters & Recital Halls:
+    # Small intra-campus academic theaters/auditoriums are not major transit-disrupting arena events.
+    has_theater_exclusion = any(_match_keyword(kw, lowered) for kw in CAMPUS_THEATER_EXCLUSIONS)
+    if has_theater_exclusion and not any(_match_keyword(kw, lowered) for kw in MAJOR_STADIUM_VENUE_KEYWORDS):
+        return None
+
     # Provincial Satellite Campus Discrimination:
     # If a post is strictly about an off-corridor provincial campus (e.g. GenSan, Santa Rosa, Cavite)
     # and does not mention any LRT-2 corridor stations or transit corridor LGUs, reject early.
@@ -800,7 +870,7 @@ def classify_post(text: str, source_type: str | None = None) -> str | None:
 
     # Traffic / Number coding / Caravan advisories route to LGU as civic notices
     # BUT if they are micro-arterial underpass/flyover closures or local fiesta rerouting, drop them early.
-    if any(k in lowered for k in ["number coding", "coding scheme", "abiso sa mga motorista", "abiso mula sa mmda", "lto caravan", "theoretical driving course"]):
+    if any(k in lowered for k in ["number coding", "coding scheme", "abiso sa mga motorista", "abiso mula sa mmda"]):
         if has_maintenance_exclusion and not has_hard_disruption:
             return None
         return "lgu"
