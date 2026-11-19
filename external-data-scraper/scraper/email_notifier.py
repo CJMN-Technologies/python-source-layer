@@ -5,7 +5,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 load_dotenv()
 
@@ -254,6 +254,67 @@ def send_pipeline_alert(new_events: list, batch: str = ""):
     </html>
     """
     
+    _send_email(subject, html)
+
+
+def send_no_events_alert(batch: str = "", mode: str = "medium", pages_count: int = 0, posts_evaluated: int = 0):
+    """Send an informational heartbeat notification when a scheduled run finds 0 new events."""
+    batch_label = f"[{batch.title()}] " if batch and batch.lower() != "all" else ""
+    subject = f"ℹ️ LRT-2 Scraper {batch_label}: Run Complete — 0 New Events Found"
+
+    pht_now = datetime.now(timezone(timedelta(hours=8))).strftime("%B %d, %Y, %I:%M %p PHT")
+    mode_label = mode.capitalize() if mode else "Standard"
+
+    html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f9f9f9;">
+        <div style="max-width: 650px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border-top: 5px solid #0288d1;">
+          <h2 style="color: #0288d1; margin-top: 0; font-size: 22px;">ℹ️ LRT-2 Scraper Run Complete — No New Events</h2>
+          <p style="font-size: 15px; line-height: 1.5; color: #555;">
+            The scheduled scraper pipeline executed successfully, but <b>no new transit-impacting events</b> were detected during this run.
+          </p>
+
+          <div style="background-color: #f5f8fa; border: 1px solid #e1e8ed; border-radius: 6px; padding: 16px; margin: 20px 0;">
+            <table border="0" cellpadding="6" cellspacing="0" style="font-size: 14px; width: 100%;">
+              <tr>
+                <td style="color: #666; width: 40%;"><b>Run Time:</b></td>
+                <td style="color: #333;">{pht_now}</td>
+              </tr>
+              <tr>
+                <td style="color: #666;"><b>Batch / Target:</b></td>
+                <td style="color: #333;">{batch.title() if batch else 'All Stations'}</td>
+              </tr>
+              <tr>
+                <td style="color: #666;"><b>Scrape Mode:</b></td>
+                <td style="color: #333;">{mode_label}</td>
+              </tr>
+              <tr>
+                <td style="color: #666;"><b>Monitored Pages Checked:</b></td>
+                <td style="color: #333;">{pages_count} pages</td>
+              </tr>
+              <tr>
+                <td style="color: #666;"><b>Posts Evaluated:</b></td>
+                <td style="color: #333;">{posts_evaluated} posts</td>
+              </tr>
+              <tr>
+                <td style="color: #666;"><b>Pipeline Status:</b></td>
+                <td style="color: #2e7d32; font-weight: bold;">✅ Operational &amp; Healthy</td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="font-size: 14px; line-height: 1.6; color: #555;">
+            The system evaluated recent posts from monitored universities and LGUs. Recent posts were classified as routine announcements (e.g. general advisories, webinars, student activities) with no class suspensions, transit strikes, holidays, or major crowd disruptions along the LRT-2 corridor.
+          </p>
+
+          <p style="font-size: 13px; color: #888; margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px;">
+            <i>This heartbeat confirmation was sent to confirm that the scraper is actively running as scheduled. The next run will execute automatically.</i>
+          </p>
+        </div>
+      </body>
+    </html>
+    """
+
     _send_email(subject, html)
 
 

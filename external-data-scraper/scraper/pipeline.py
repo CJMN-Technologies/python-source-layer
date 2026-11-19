@@ -8,7 +8,7 @@ from supabase import create_client
 from fb_scraper import scrape_pages_batch, is_valid_facebook_post_url
 from keywords import classify_post
 from llm_classifier import classify_post_llm
-from email_notifier import send_pipeline_alert
+from email_notifier import send_pipeline_alert, send_no_events_alert
 
 # ---------------------------------------------------------------------------
 # Retrospective Photo Recap Guardrail
@@ -645,11 +645,13 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
     )
 
     total_saved = 0
+    total_evaluated = 0
     newly_saved_events = []
 
     for page_idx, page in enumerate(pages):
         print(f"\n[{page_idx + 1}/{len(pages)}] Processing: {page['name']} ({page['station']}) — Batch {page.get('batch','?')}")
         posts = scraped_data_by_url.get(page["url"], [])
+        total_evaluated += len(posts)
         print(f"  Evaluating {len(posts)} posts for events...")
 
         for post in posts:
@@ -900,6 +902,9 @@ def run_pipeline(batch: str = "all", mode: str = "medium"):
     if newly_saved_events:
         print(f"Sending email alert for {len(newly_saved_events)} new events (Batch: {batch})...")
         send_pipeline_alert(newly_saved_events, batch=batch)
+    else:
+        print(f"Sending heartbeat email (0 new events, Batch: {batch})...")
+        send_no_events_alert(batch=batch, mode=mode, pages_count=len(pages), posts_evaluated=total_evaluated)
 
 
 if __name__ == "__main__":
